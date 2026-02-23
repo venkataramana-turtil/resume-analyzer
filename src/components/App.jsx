@@ -43,11 +43,8 @@ export const App = () => {
     return text;
   };
 
-  // Stream one API call, parse its section keys, merge into shared sections state
-  const streamCall = async (buildFn, sectionKeys, text, market, roles, attempt = 1) => {
-    const retryLabel = attempt > 1 ? ` (retry ${attempt - 1}/2)…` : '…';
-    setLoadStep(`Analyzing resume${retryLabel}`);
-
+  // Stream one API call; fires onSection(key, data) for each completed section
+  const streamCall = async (buildFn, sectionKeys, text, market, roles, onSection, attempt = 1) => {
     const res = await fetch(CONFIG.endpoint, {
       method: 'POST',
       headers: {
@@ -66,7 +63,7 @@ export const App = () => {
 
     if (res.status === 504 && attempt < 3) {
       await new Promise(r => setTimeout(r, 2000 * attempt));
-      return streamCall(buildFn, sectionKeys, text, market, roles, attempt + 1);
+      return streamCall(buildFn, sectionKeys, text, market, roles, onSection, attempt + 1);
     }
 
     if (!res.ok) {
@@ -103,7 +100,7 @@ export const App = () => {
             const section = extractTopLevelKey(accumulated, key);
             if (section) {
               parsedKeys.add(key);
-              setSections(prev => ({ ...prev, [key]: section }));
+              onSection(key, section);
             }
           }
         } catch { /* ignore malformed SSE lines */ }
@@ -116,7 +113,11 @@ export const App = () => {
         const match = accumulated.match(/\{[\s\S]*\}/);
         if (match) {
           const parsed = JSON.parse(match[0]);
-          setSections(prev => ({ ...prev, ...parsed }));
+          for (const key of sectionKeys) {
+            if (!parsedKeys.has(key) && parsed[key]) {
+              onSection(key, parsed[key]);
+            }
+          }
         }
       } catch { /* best effort */ }
     }
@@ -144,13 +145,42 @@ export const App = () => {
       const truncated = cleaned.slice(0, 4000);
       setCharCount(cleaned.length);
 
-      // Step 2: Switch to results screen, then fire both API calls in parallel
+      // Step 2: Switch to results screen, fire both API calls in parallel
       setScreen('results');
       setStreaming(true);
 
+      // Call B results are buffered until all of Call A's sections have arrived
+      const callBBuffer = {};
+      let callAComplete = false;
+
+      const flushCallB = () => {
+        const buffered = { ...callBBuffer };
+        if (Object.keys(buffered).length > 0) {
+          setSections(prev => ({ ...prev, ...buffered }));
+        }
+      };
+
       await Promise.all([
-        streamCall(buildMessagesA, SECTION_KEYS_A, truncated, market, roles),
-        streamCall(buildMessagesB, SECTION_KEYS_B, truncated, market, roles),
+        // Call A — renders sections immediately as they arrive
+        streamCall(
+          buildMessagesA, SECTION_KEYS_A, truncated, market, roles,
+          (key, data) => setSections(prev => ({ ...prev, [key]: data }))
+        ).then(() => {
+          callAComplete = true;
+          flushCallB();         // release any buffered Call B sections immediately
+        }),
+
+        // Call B — buffers until Call A is done, then renders normally
+        streamCall(
+          buildMessagesB, SECTION_KEYS_B, truncated, market, roles,
+          (key, data) => {
+            if (callAComplete) {
+              setSections(prev => ({ ...prev, [key]: data }));
+            } else {
+              callBBuffer[key] = data;
+            }
+          }
+        ),
       ]);
 
       setStreaming(false);
