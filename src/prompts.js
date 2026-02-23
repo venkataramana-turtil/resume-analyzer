@@ -71,24 +71,11 @@ Analyze the resume below and return a JSON object with EXACTLY this structure (n
     "critical_issues": ["specific issue that will cause ATS rejection"],
     "quick_wins": ["specific, actionable change that would meaningfully improve ATS score"]
   },
-  "improvement_plan": {
-    "potential_score": <integer — realistic ATS score achievable after all tips below are applied>,
-    "tips": [
-      {
-        "priority": "Critical | High | Medium",
-        "category": "Achievements | Keywords | Formatting | Contact | Structure | Length | Verbs | Clarity",
-        "title": "short imperative title (max 8 words)",
-        "detail": "specific, actionable instruction — include a concrete example or exact wording where helpful",
-        "score_impact": <integer — ATS points this single fix adds>
-      }
-    ]
-  }
 }
 
 Rules:
 - ATS score should reflect actual ATS algorithm behaviour, not just resume quality
 - critical_issues and quick_wins must be concrete and actionable, not generic
-- improvement_plan.tips must be sorted by score_impact descending; total score_impact of all tips should approximately equal (potential_score - ats.score); minimum 5 tips, cover diverse categories
 - Output raw JSON only — no markdown, no text outside the object
 
 Resume text:
@@ -106,6 +93,18 @@ export const buildMessagesB = (text, market, roles = []) => [
 Analyze the resume below and return a JSON object with EXACTLY this structure (no other keys):
 
 {
+  "improvement_plan": {
+    "potential_score": <integer — realistic ATS score achievable after all tips below are applied>,
+    "tips": [
+      {
+        "priority": "Critical | High | Medium",
+        "category": "Achievements | Keywords | Formatting | Contact | Structure | Length | Verbs | Clarity",
+        "title": "short imperative title (max 8 words)",
+        "detail": "specific, actionable instruction — include a concrete example or exact wording where helpful",
+        "score_impact": <integer — ATS points this single fix adds>
+      }
+    ]
+  },
   "salary": {
     "currency": "${market.currency}",
     "service_based": {
@@ -182,6 +181,7 @@ Important distinction:
 - "personal_salary" = what THIS specific person can command based on their actual resume — their unique combination of skills, tenure, achievements, and the target market. Floor/target/stretch must be internally consistent and fall within the relevant salary ranges above.
 
 Rules:
+- improvement_plan.tips must be sorted by score_impact descending; total score_impact of all tips should approximately equal (potential_score - ats.score); minimum 5 tips, cover diverse categories
 - Salary figures must reflect real market data from Glassdoor, AmbitionBox, Levels.fyi, LinkedIn Salary, and Blind for this exact role + seniority + target market — numbers must match what a candidate would find if they searched these platforms today; do not inflate or use placeholder numbers
 - hire_confidence benchmarks against 2025-2026 hiring conditions specifically
 - candidate_vs_market.dimensions must contain exactly the 6 named dimensions in the order listed; scores are 1-10 relative to the average applicant pool for this role and market; pros must have 3-5 items and cons must have 3-5 items, each covering distinct categories

@@ -1,6 +1,6 @@
 export const SECTION_KEYS   = ['candidate','ats','improvement_plan','salary','personal_salary','market_fit','candidate_vs_market'];
-export const SECTION_KEYS_A = ['candidate','ats','improvement_plan'];
-export const SECTION_KEYS_B = ['salary','personal_salary','market_fit','candidate_vs_market'];
+export const SECTION_KEYS_A = ['candidate','ats'];
+export const SECTION_KEYS_B = ['improvement_plan','salary','personal_salary','market_fit','candidate_vs_market'];
 
 export const extractTopLevelKey = (str, key) => {
   const searchKey = `"${key}"`;
