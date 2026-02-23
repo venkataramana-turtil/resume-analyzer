@@ -8,15 +8,127 @@ const cvmStandingMeta = {
   'Entry Level':  { color: '#ff4444', bg: 'rgba(255,68,68,.1)',  border: 'rgba(255,68,68,.3)'  },
 };
 
+// Short axis labels for the radar
+const AXIS_LABELS = ['Technical', 'Experience', 'Achievements', 'Education', 'Domain', 'Presentation'];
+
+const RadarChart = ({ dimensions, accentColor }) => {
+  const [show, setShow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setShow(true), 350); return () => clearTimeout(t); }, []);
+
+  const cx = 130, cy = 125, maxR = 88, labelR = 112;
+  const n = 6;
+  const angles = Array.from({ length: n }, (_, i) => -Math.PI / 2 + (i * 2 * Math.PI) / n);
+
+  const pt = (score, idx) => ({
+    x: cx + (score / 10) * maxR * Math.cos(angles[idx]),
+    y: cy + (score / 10) * maxR * Math.sin(angles[idx]),
+  });
+
+  const toPath = pts =>
+    pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join('') + 'Z';
+
+  const cPts = dimensions.map((d, i) => pt(d.candidate_score,  i));
+  const mPts = dimensions.map((d, i) => pt(d.market_avg_score, i));
+
+  // Concentric grid rings at 2, 4, 6, 8, 10
+  const grid = [2, 4, 6, 8, 10].map(v =>
+    toPath(angles.map(a => ({ x: cx + (v / 10) * maxR * Math.cos(a), y: cy + (v / 10) * maxR * Math.sin(a) })))
+  );
+
+  return (
+    <div style={{ opacity: show ? 1 : 0, transition: 'opacity 0.7s ease' }}>
+      <svg width="260" height="250" viewBox="0 0 260 250" overflow="visible">
+        {/* Grid rings */}
+        {grid.map((d, i) => (
+          <path key={i} d={d} fill="none" stroke="#1e1e35" strokeWidth="1" />
+        ))}
+        {/* Axis spokes */}
+        {angles.map((a, i) => (
+          <line key={i}
+            x1={cx} y1={cy}
+            x2={cx + maxR * Math.cos(a)} y2={cy + maxR * Math.sin(a)}
+            stroke="#1e1e35" strokeWidth="1"
+          />
+        ))}
+        {/* Market avg polygon — dashed white */}
+        <path d={toPath(mPts)}
+          fill="rgba(255,255,255,0.05)"
+          stroke="rgba(255,255,255,0.3)"
+          strokeWidth="1.5"
+          strokeDasharray="4 3"
+        />
+        {/* Candidate polygon — solid accent */}
+        <path d={toPath(cPts)}
+          fill="rgba(124,58,237,0.22)"
+          stroke="#7c3aed"
+          strokeWidth="2"
+        />
+        {/* Candidate dots */}
+        {cPts.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r="3.5"
+            fill="#7c3aed" stroke="#0a0a0f" strokeWidth="1.5" />
+        ))}
+        {/* Market avg dots */}
+        {mPts.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r="2.5"
+            fill="rgba(255,255,255,0.35)" />
+        ))}
+        {/* Axis labels */}
+        {angles.map((a, i) => {
+          const lx = cx + labelR * Math.cos(a);
+          const ly = cy + labelR * Math.sin(a);
+          const anchor = lx < cx - 8 ? 'end' : lx > cx + 8 ? 'start' : 'middle';
+          const d = dimensions[i];
+          const ahead = d.candidate_score >= d.market_avg_score;
+          return (
+            <g key={i}>
+              <text x={lx} y={ly - 5} textAnchor={anchor} dominantBaseline="middle"
+                fontSize="9" fill="#9ca3af" fontFamily="'DM Mono', monospace">
+                {AXIS_LABELS[i]}
+              </text>
+              <text x={lx} y={ly + 6} textAnchor={anchor} dominantBaseline="middle"
+                fontSize="8.5" fontWeight="bold" fill={ahead ? '#6ee7b7' : '#f87171'}
+                fontFamily="'Space Mono', monospace">
+                {d.candidate_score}/10
+              </text>
+            </g>
+          );
+        })}
+        {/* Grid value labels at centre-right */}
+        {[2, 4, 6, 8].map(v => (
+          <text key={v}
+            x={cx + (v / 10) * maxR * Math.cos(-Math.PI / 2) + 4}
+            y={cy + (v / 10) * maxR * Math.sin(-Math.PI / 2) - 3}
+            fontSize="7" fill="#374151" fontFamily="monospace" textAnchor="start">
+            {v}
+          </text>
+        ))}
+      </svg>
+
+      {/* Legend */}
+      <div className="flex items-center gap-5 mt-1 text-xs justify-center" style={{ color: '#4b5563' }}>
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-0.5 rounded-full" style={{ background: '#7c3aed' }} />
+          <circle />
+          <span>You</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-0" style={{ borderTop: '1.5px dashed rgba(255,255,255,0.3)' }} />
+          <span>Market avg</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const CandidateVsMarketSection = ({ cvm }) => {
   const meta = cvmStandingMeta[cvm.overall_standing] || cvmStandingMeta['Average'];
   const [animated, setAnimated] = useState(false);
-  const [pctLeft, setPctLeft]   = useState(0);
 
   useEffect(() => {
-    const t = setTimeout(() => { setAnimated(true); setPctLeft(cvm.standing_percentile); }, 450);
+    const t = setTimeout(() => setAnimated(true), 450);
     return () => clearTimeout(t);
-  }, [cvm.standing_percentile]);
+  }, []);
 
   return (
     <div className="fade-4 rounded-2xl border overflow-hidden" style={{ borderColor: '#1e1e35' }}>
@@ -36,84 +148,59 @@ export const CandidateVsMarketSection = ({ cvm }) => {
 
       <div className="p-6" style={{ background: '#12121e' }}>
         {/* Summary */}
-        <p className="text-sm leading-relaxed mb-5 pb-5 border-b"
+        <p className="text-sm leading-relaxed mb-6 pb-5 border-b"
           style={{ color: '#9ca3af', borderColor: '#1e1e35' }}>
           {cvm.summary}
         </p>
 
-        {/* Percentile strip */}
+        {/* Radar chart replaces the old percentile bar */}
         <div className="mb-7">
-          <p className="text-xs font-bold mb-3" style={{ color: '#6b7280' }}>MARKET PERCENTILE</p>
-          <div className="relative h-2 rounded-full"
-            style={{ background: 'linear-gradient(to right,#7f1d1d 0%,#d97706 50%,#166534 100%)' }}>
-            <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 border-white"
-              style={{
-                left: `${pctLeft}%`,
-                background: meta.color,
-                boxShadow: `0 0 10px ${meta.color}99`,
-                transition: 'left 1.5s cubic-bezier(.34,1.56,.64,1)',
-              }} />
-          </div>
-          <div className="flex justify-between text-xs mt-2" style={{ color: '#4b5563' }}>
-            <span>0th</span>
-            <span className="font-bold" style={{ color: meta.color, fontFamily:"'Space Mono',monospace" }}>
+          <div className="flex items-start justify-between mb-1">
+            <p className="text-xs font-bold" style={{ color: '#6b7280' }}>SKILL RADAR</p>
+            <span className="text-xs font-bold px-2 py-0.5 rounded"
+              style={{ color: meta.color, background: meta.bg, fontFamily: "'Space Mono',monospace" }}>
               {cvm.standing_percentile}th percentile
             </span>
-            <span>100th</span>
+          </div>
+          <div className="flex justify-center">
+            <RadarChart dimensions={cvm.dimensions || []} accentColor={meta.color} />
           </div>
         </div>
 
-        {/* Dimension breakdown */}
+        {/* Dimension notes list */}
         <div className="mb-7">
-          <p className="text-xs font-bold mb-4" style={{ color: '#6b7280' }}>DIMENSION BREAKDOWN</p>
-          <div className="space-y-4">
+          <p className="text-xs font-bold mb-3" style={{ color: '#6b7280' }}>DIMENSION BREAKDOWN</p>
+          <div className="space-y-3">
             {(cvm.dimensions || []).map((dim, i) => {
               const ahead = dim.candidate_score >= dim.market_avg_score;
-              const cPct  = (dim.candidate_score / 10) * 100;
-              const mPct  = (dim.market_avg_score / 10) * 100;
+              const delta = dim.candidate_score - dim.market_avg_score;
               return (
-                <div key={i}>
-                  <div className="flex items-center justify-between mb-1.5">
+                <div key={i} className="flex items-start gap-3">
+                  <div className="flex items-center gap-1.5 shrink-0 w-36">
                     <span className="text-xs font-medium" style={{ color: '#c4c4d4' }}>{dim.name}</span>
-                    <div className="flex items-center gap-1.5 text-xs">
-                      <span className="font-bold" style={{ color: ahead ? '#6ee7b7' : '#f87171',
-                        fontFamily:"'Space Mono',monospace" }}>{dim.candidate_score}/10</span>
-                      <span style={{ color: '#4b5563' }}>· avg</span>
-                      <span style={{ color: '#6b7280', fontFamily:"'Space Mono',monospace" }}>
-                        {dim.market_avg_score}/10
-                      </span>
-                    </div>
                   </div>
-                  <div className="relative h-3 rounded-full overflow-hidden" style={{ background: '#1e1e35' }}>
-                    {/* Candidate bar */}
-                    <div className="gauge-fill absolute inset-y-0 left-0 rounded-full"
-                      style={{
-                        width: animated ? `${cPct}%` : '0%',
-                        background: ahead
-                          ? 'linear-gradient(to right,#5b21b6,#8b5cf6)'
-                          : 'linear-gradient(to right,#7f1d1d,#ef4444)',
-                      }} />
-                    {/* Market avg marker */}
-                    <div className="absolute top-0 bottom-0 w-0.5"
-                      style={{ left: `${mPct}%`, background: 'rgba(255,255,255,0.45)', zIndex: 1 }} />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs font-bold" style={{
+                      color: ahead ? '#6ee7b7' : '#f87171',
+                      fontFamily: "'Space Mono',monospace"
+                    }}>{dim.candidate_score}/10</span>
+                    <span className="text-xs" style={{ color: '#374151' }}>vs</span>
+                    <span className="text-xs" style={{ color: '#6b7280', fontFamily: "'Space Mono',monospace" }}>
+                      {dim.market_avg_score}/10
+                    </span>
+                    <span className="text-xs font-bold" style={{
+                      color: ahead ? '#6ee7b7' : '#f87171',
+                      fontFamily: "'Space Mono',monospace"
+                    }}>
+                      {delta > 0 ? `+${delta}` : delta}
+                    </span>
                   </div>
                   {dim.note && (
-                    <p className="text-xs mt-0.5" style={{ color: '#4b5563' }}>{dim.note}</p>
+                    <p className="text-xs leading-relaxed" style={{ color: '#4b5563' }}>{dim.note}</p>
                   )}
                 </div>
               );
             })}
-          </div>
-          {/* Legend */}
-          <div className="flex items-center gap-5 mt-4 text-xs" style={{ color: '#4b5563' }}>
-            <div className="flex items-center gap-1.5">
-              <div className="w-7 h-2 rounded-full" style={{ background: '#7c3aed' }} />
-              <span>You</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-px h-3" style={{ background: 'rgba(255,255,255,0.45)' }} />
-              <span>Market average</span>
-            </div>
           </div>
         </div>
 
