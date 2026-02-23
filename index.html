@@ -1439,23 +1439,34 @@ ${text}`
           const truncated = cleaned.slice(0, 4000);
           setCharCount(cleaned.length);
 
-          // Step 2: Send to GLM with thinking mode + JSON output
-          setLoadStep(`Analyzing against ${market.name} market standards…`);
-          const res = await fetch(CONFIG.endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept-Language': 'en-US,en',
-            },
-            body: JSON.stringify({
-              model:       CONFIG.model,
-              messages:    buildMessages(truncated, market, roles),
-              max_tokens:  CONFIG.maxTokens,
-              temperature: CONFIG.temperature,
-              response_format: { type: 'json_object' },  // guaranteed JSON output
-              // thinking mode is ON by default in glm-4.7 — no need to set it
-            }),
-          });
+          // Step 2: Send to GLM with auto-retry on 504
+          const MAX_RETRIES = 3;
+          let res, attempt = 0;
+          while (true) {
+            attempt++;
+            const retryLabel = attempt > 1 ? ` (retry ${attempt - 1}/${MAX_RETRIES - 1})…` : '…';
+            setLoadStep(`Analyzing against ${market.name} market standards${retryLabel}`);
+            res = await fetch(CONFIG.endpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept-Language': 'en-US,en',
+              },
+              body: JSON.stringify({
+                model:       CONFIG.model,
+                messages:    buildMessages(truncated, market, roles),
+                max_tokens:  CONFIG.maxTokens,
+                temperature: CONFIG.temperature,
+                response_format: { type: 'json_object' },
+              }),
+            });
+
+            if (res.status === 504 && attempt < MAX_RETRIES) {
+              await new Promise(r => setTimeout(r, 2000 * attempt)); // 2s, 4s back-off
+              continue;
+            }
+            break;
+          }
 
           if (!res.ok) {
             const errBody = await res.json().catch(() => ({}));
