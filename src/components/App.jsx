@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { CONFIG, MARKETS } from '../config.js'
-import { SECTION_KEYS_A, SECTION_KEYS_B, extractTopLevelKey } from '../streaming.js'
-import { buildMessagesA, buildMessagesB } from '../prompts.js'
+import { SECTION_KEYS_A, SECTION_KEYS_B, SECTION_KEYS_C, extractTopLevelKey } from '../streaming.js'
+import { buildMessagesA, buildMessagesB, buildMessagesC } from '../prompts.js'
 import { generateTagline } from '../helpers.js'
 import { UploadZone } from './UploadZone.jsx'
 import { LoadingState } from './LoadingState.jsx'
@@ -149,38 +149,40 @@ export const App = () => {
       setScreen('results');
       setStreaming(true);
 
-      // Call B results are buffered until all of Call A's sections have arrived
+      // Call B and C buffer their results until Call A is fully done
       const callBBuffer = {};
+      const callCBuffer = {};
       let callAComplete = false;
 
-      const flushCallB = () => {
-        const buffered = { ...callBBuffer };
-        if (Object.keys(buffered).length > 0) {
-          setSections(prev => ({ ...prev, ...buffered }));
+      const flushBuffer = buf => {
+        if (Object.keys(buf).length > 0)
+          setSections(prev => ({ ...prev, ...buf }));
+      };
+
+      const gatedHandler = (buf) => (key, data) => {
+        if (callAComplete) {
+          setSections(prev => ({ ...prev, [key]: data }));
+        } else {
+          buf[key] = data;
         }
       };
 
       await Promise.all([
-        // Call A — renders sections immediately as they arrive
+        // Call A — renders immediately as sections arrive
         streamCall(
           buildMessagesA, SECTION_KEYS_A, truncated, market, roles,
           (key, data) => setSections(prev => ({ ...prev, [key]: data }))
         ).then(() => {
           callAComplete = true;
-          flushCallB();         // release any buffered Call B sections immediately
+          flushBuffer(callBBuffer);
+          flushBuffer(callCBuffer);
         }),
 
-        // Call B — buffers until Call A is done, then renders normally
-        streamCall(
-          buildMessagesB, SECTION_KEYS_B, truncated, market, roles,
-          (key, data) => {
-            if (callAComplete) {
-              setSections(prev => ({ ...prev, [key]: data }));
-            } else {
-              callBBuffer[key] = data;
-            }
-          }
-        ),
+        // Call B — improvement plan only
+        streamCall(buildMessagesB, SECTION_KEYS_B, truncated, market, roles, gatedHandler(callBBuffer)),
+
+        // Call C — salary + market sections
+        streamCall(buildMessagesC, SECTION_KEYS_C, truncated, market, roles, gatedHandler(callCBuffer)),
       ]);
 
       setStreaming(false);

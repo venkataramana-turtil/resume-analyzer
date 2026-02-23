@@ -83,15 +83,12 @@ ${text}`
   }
 ];
 
-// Call B — improvement plan + salary benchmarks + personal salary + market fit + candidate vs market
+// Call B — improvement plan only
 export const buildMessagesB = (text, market, roles = []) => [
   { role: 'system', content: SYSTEM_PROMPT },
   {
     role: 'user',
     content: `${marketContext(market, roles)}
-
-CRITICAL — Experience calculation (apply this before producing ANY output):
-Count exact months for every role by subtracting start date from end date (e.g. Jun 2022 to Feb 2025 = 32 months). Sum all roles, divide total months by 12, keep 2 decimal places (e.g. 32 ÷ 12 = 2.67 years). If a role is ongoing use the current date Feb 2026. NEVER round to a whole number. This precise decimal figure (e.g. 2.67, not 2 or 3) MUST be the basis for every salary range, personal salary floor/target/stretch, hire_confidence score, Experience Depth score, and all written rationale/summaries below — an extra 8 months of experience has real monetary and market value and must not be discarded.
 
 Analyze the resume below and return a JSON object with EXACTLY this structure (no other keys):
 
@@ -107,7 +104,33 @@ Analyze the resume below and return a JSON object with EXACTLY this structure (n
         "score_impact": <integer — ATS points this single fix adds>
       }
     ]
-  },
+  }
+}
+
+Rules:
+- improvement_plan.tips must be sorted by score_impact descending; total score_impact of all tips should approximately equal (potential_score - ats.score); minimum 5 tips, cover diverse categories
+- Output raw JSON only — no markdown, no text outside the object
+
+Resume text:
+${text}`
+  }
+];
+
+const experienceInstruction = `CRITICAL — Experience calculation (apply this before producing ANY output):
+Count exact months for every role by subtracting start date from end date (e.g. Jun 2022 to Feb 2025 = 32 months). Sum all roles, divide total months by 12, keep 2 decimal places (e.g. 32 ÷ 12 = 2.67 years). If a role is ongoing use the current date Feb 2026. NEVER round to a whole number. This precise decimal figure (e.g. 2.67, not 2 or 3) MUST be the basis for every salary range, personal salary floor/target/stretch, hire_confidence score, Experience Depth score, and all written rationale/summaries below — an extra 8 months of experience has real monetary and market value and must not be discarded.`;
+
+// Call C — salary benchmarks + personal salary + market fit + candidate vs market
+export const buildMessagesC = (text, market, roles = []) => [
+  { role: 'system', content: SYSTEM_PROMPT },
+  {
+    role: 'user',
+    content: `${marketContext(market, roles)}
+
+${experienceInstruction}
+
+Analyze the resume below and return a JSON object with EXACTLY this structure (no other keys):
+
+{
   "salary": {
     "currency": "${market.currency}",
     "service_based": {
@@ -184,7 +207,6 @@ Important distinction:
 - "personal_salary" = what THIS specific person can command based on their actual resume — their unique combination of skills, tenure, achievements, and the target market. Floor/target/stretch must be internally consistent and fall within the relevant salary ranges above.
 
 Rules:
-- improvement_plan.tips must be sorted by score_impact descending; total score_impact of all tips should approximately equal (potential_score - ats.score); minimum 5 tips, cover diverse categories
 - Salary figures must reflect real market data from Glassdoor, AmbitionBox, Levels.fyi, LinkedIn Salary, and Blind for this exact role + seniority + target market — numbers must match what a candidate would find if they searched these platforms today; do not inflate or use placeholder numbers
 - hire_confidence benchmarks against 2025-2026 hiring conditions specifically
 - candidate_vs_market.dimensions must contain exactly the 6 named dimensions in the order listed; scores are 1-10 relative to the average applicant pool for this role and market; pros must have 3-5 items and cons must have 3-5 items, each covering distinct categories
