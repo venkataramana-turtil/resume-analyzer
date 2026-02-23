@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { CONFIG, MARKETS } from '../config.js'
-import { SECTION_KEYS, extractTopLevelKey } from '../streaming.js'
-import { buildMessages } from '../prompts.js'
+import { SECTION_KEYS_A, SECTION_KEYS_B, extractTopLevelKey } from '../streaming.js'
+import { buildMessagesA, buildMessagesB } from '../prompts.js'
 import { generateTagline } from '../helpers.js'
 import { UploadZone } from './UploadZone.jsx'
 import { LoadingState } from './LoadingState.jsx'
@@ -43,6 +43,85 @@ export const App = () => {
     return text;
   };
 
+  // Stream one API call, parse its section keys, merge into shared sections state
+  const streamCall = async (buildFn, sectionKeys, text, market, roles, attempt = 1) => {
+    const retryLabel = attempt > 1 ? ` (retry ${attempt - 1}/2)…` : '…';
+    setLoadStep(`Analyzing resume${retryLabel}`);
+
+    const res = await fetch(CONFIG.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CONFIG.apiKey}`,
+        'Accept-Language': 'en-US,en',
+      },
+      body: JSON.stringify({
+        model:       CONFIG.model,
+        messages:    buildFn(text, market, roles),
+        max_tokens:  CONFIG.maxTokens,
+        temperature: CONFIG.temperature,
+        stream:      true,
+      }),
+    });
+
+    if (res.status === 504 && attempt < 3) {
+      await new Promise(r => setTimeout(r, 2000 * attempt));
+      return streamCall(buildFn, sectionKeys, text, market, roles, attempt + 1);
+    }
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody?.error?.message || `API error ${res.status} — please try again.`);
+    }
+
+    const reader     = res.body.getReader();
+    const decoder    = new TextDecoder();
+    const parsedKeys = new Set();
+    let accumulated  = '';
+    let buffer       = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const data = trimmed.slice(6).trim();
+        if (data === '[DONE]') continue;
+        try {
+          const msg   = JSON.parse(data);
+          const delta = msg.choices?.[0]?.delta?.content ?? '';
+          accumulated += delta;
+
+          for (const key of sectionKeys) {
+            if (parsedKeys.has(key)) continue;
+            const section = extractTopLevelKey(accumulated, key);
+            if (section) {
+              parsedKeys.add(key);
+              setSections(prev => ({ ...prev, [key]: section }));
+            }
+          }
+        } catch { /* ignore malformed SSE lines */ }
+      }
+    }
+
+    // Fallback: parse full accumulated string if any sections are missing
+    if (parsedKeys.size < sectionKeys.length) {
+      try {
+        const match = accumulated.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          setSections(prev => ({ ...prev, ...parsed }));
+        }
+      } catch { /* best effort */ }
+    }
+  };
+
   const run = async (file, roles = []) => {
     setTagline(generateTagline(file));
     setScreen('loading');
@@ -65,87 +144,14 @@ export const App = () => {
       const truncated = cleaned.slice(0, 4000);
       setCharCount(cleaned.length);
 
-      // Step 2: Fetch with streaming + retry on 504
-      const MAX_RETRIES = 3;
-      let res, attempt = 0;
-      while (true) {
-        attempt++;
-        const retryLabel = attempt > 1 ? ` (retry ${attempt - 1}/${MAX_RETRIES - 1})…` : '…';
-        setLoadStep(`Analyzing against ${market.name} market standards${retryLabel}`);
-        res = await fetch(CONFIG.endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${CONFIG.apiKey}`,
-            'Accept-Language': 'en-US,en',
-          },
-          body: JSON.stringify({
-            model:       CONFIG.model,
-            messages:    buildMessages(truncated, market, roles),
-            max_tokens:  CONFIG.maxTokens,
-            temperature: CONFIG.temperature,
-            stream:      true,
-          }),
-        });
-        if (res.status === 504 && attempt < MAX_RETRIES) {
-          await new Promise(r => setTimeout(r, 2000 * attempt));
-          continue;
-        }
-        break;
-      }
-
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody?.error?.message || `API error ${res.status} — please try again.`);
-      }
-
-      // Step 3: Switch to results screen immediately, stream sections in
+      // Step 2: Switch to results screen, then fire both API calls in parallel
       setScreen('results');
       setStreaming(true);
 
-      const reader      = res.body.getReader();
-      const decoder     = new TextDecoder();
-      const parsedKeys  = new Set();
-      let accumulated   = '';
-      let buffer        = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-          const data = trimmed.slice(6).trim();
-          if (data === '[DONE]') continue;
-          try {
-            const msg   = JSON.parse(data);
-            const delta = msg.choices?.[0]?.delta?.content ?? '';
-            accumulated += delta;
-
-            for (const key of SECTION_KEYS) {
-              if (parsedKeys.has(key)) continue;
-              const section = extractTopLevelKey(accumulated, key);
-              if (section) {
-                parsedKeys.add(key);
-                setSections(prev => ({ ...prev, [key]: section }));
-              }
-            }
-          } catch { /* ignore malformed SSE lines */ }
-        }
-      }
-
-      // Fallback: if stream ended with missing sections, try parsing full accumulated string
-      if (parsedKeys.size < SECTION_KEYS.length) {
-        try {
-          const match = accumulated.match(/\{[\s\S]*\}/);
-          if (match) setSections(JSON.parse(match[0]));
-        } catch { /* best effort */ }
-      }
+      await Promise.all([
+        streamCall(buildMessagesA, SECTION_KEYS_A, truncated, market, roles),
+        streamCall(buildMessagesB, SECTION_KEYS_B, truncated, market, roles),
+      ]);
 
       setStreaming(false);
     } catch (err) {

@@ -28,16 +28,20 @@ Approach every resume analysis like a senior hiring partner doing a thorough pre
 Be specific and honest. Vague feedback helps no one. Always respond in English.
 You must output ONLY a valid JSON object — no markdown fences, no preamble, no commentary.`;
 
-export const buildMessages = (text, market, roles = []) => [
+const marketContext = (market, roles) =>
+`Target market: ${market.name}
+Salary currency: ${market.currency} (${market.sym.trim()})
+All salary figures must be in ${market.currency}, benchmarked specifically against ${market.name} hiring norms for 2025-2026. Use company names that are well-known and representative of the ${market.name} tech industry for each tier (service-based, product-based, startups, freelance). If the candidate's resume shows international experience but the target market is ${market.name}, calibrate to what they could realistically earn in ${market.name}.
+${roles.length ? `\nTarget roles the candidate is pursuing: ${roles.join(', ')}.\nFactor these target roles into your salary ranges, hire_confidence scoring, benchmark_summary, and roles_recommended — assess how well this candidate's current profile aligns with those specific aspirations and what gaps exist between where they are now and those goals.` : ''}`;
+
+// Call A — candidate profile + ATS + improvement plan
+export const buildMessagesA = (text, market, roles = []) => [
   { role: 'system', content: SYSTEM_PROMPT },
   {
     role: 'user',
-    content: `Target market: ${market.name}
-Salary currency: ${market.currency} (${market.sym.trim()})
-All salary figures must be in ${market.currency}, benchmarked specifically against ${market.name} hiring norms for 2025-2026. Use company names that are well-known and representative of the ${market.name} tech industry for each tier (service-based, product-based, startups, freelance). If the candidate's resume shows international experience but the target market is ${market.name}, calibrate to what they could realistically earn in ${market.name}.
-${roles.length ? `\nTarget roles the candidate is pursuing: ${roles.join(', ')}.\nFactor these target roles into your salary ranges, hire_confidence scoring, benchmark_summary, and roles_recommended — assess how well this candidate's current profile aligns with those specific aspirations and what gaps exist between where they are now and those goals.` : ''}
+    content: `${marketContext(market, roles)}
 
-Analyze the resume below and return a JSON object with exactly this structure:
+Analyze the resume below and return a JSON object with EXACTLY this structure (no other keys):
 
 {
   "candidate": {
@@ -78,7 +82,30 @@ Analyze the resume below and return a JSON object with exactly this structure:
         "score_impact": <integer — ATS points this single fix adds>
       }
     ]
-  },
+  }
+}
+
+Rules:
+- ATS score should reflect actual ATS algorithm behaviour, not just resume quality
+- critical_issues and quick_wins must be concrete and actionable, not generic
+- improvement_plan.tips must be sorted by score_impact descending; total score_impact of all tips should approximately equal (potential_score - ats.score); minimum 5 tips, cover diverse categories
+- Output raw JSON only — no markdown, no text outside the object
+
+Resume text:
+${text}`
+  }
+];
+
+// Call B — salary benchmarks + personal salary + market fit + candidate vs market
+export const buildMessagesB = (text, market, roles = []) => [
+  { role: 'system', content: SYSTEM_PROMPT },
+  {
+    role: 'user',
+    content: `${marketContext(market, roles)}
+
+Analyze the resume below and return a JSON object with EXACTLY this structure (no other keys):
+
+{
   "salary": {
     "currency": "${market.currency}",
     "service_based": {
@@ -156,10 +183,7 @@ Important distinction:
 
 Rules:
 - Salary figures must reflect real market data from Glassdoor, AmbitionBox, Levels.fyi, LinkedIn Salary, and Blind for this exact role + seniority + target market — numbers must match what a candidate would find if they searched these platforms today; do not inflate or use placeholder numbers
-- ATS score should reflect actual ATS algorithm behaviour, not just resume quality
 - hire_confidence benchmarks against 2025-2026 hiring conditions specifically
-- critical_issues and quick_wins must be concrete and actionable, not generic
-- improvement_plan.tips must be sorted by score_impact descending; total score_impact of all tips should approximately equal (potential_score - ats.score); minimum 5 tips, cover diverse categories
 - candidate_vs_market.dimensions must contain exactly the 6 named dimensions in the order listed; scores are 1-10 relative to the average applicant pool for this role and market; pros must have 3-5 items and cons must have 3-5 items, each covering distinct categories
 - Output raw JSON only — no markdown, no text outside the object
 
@@ -167,3 +191,6 @@ Resume text:
 ${text}`
   }
 ];
+
+// Legacy export kept for compatibility — not used in parallel mode
+export const buildMessages = buildMessagesA;

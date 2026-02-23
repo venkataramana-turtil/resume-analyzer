@@ -2,7 +2,7 @@ export const CONFIG = {
   apiKey:      'dc05f7df3a9347378b2dff396352015c.patn2LK38cRcIp2Q',
   endpoint:    'https://api.z.ai/api/coding/paas/v4/chat/completions',
   model:       'glm-4.7',
-  maxTokens:   4096,
+  maxTokens:   6000,
   temperature: 0,     // 0 = greedy decoding, same resume → same scores every time
 };
 
