@@ -317,7 +317,14 @@
               </div>
               <p className="text-sm mb-3" style={{ color: '#a78bfa' }}>{c.role}</p>
               <div className="flex flex-wrap gap-4 text-xs" style={{ color: '#9ca3af' }}>
-                <span>⏱ {Number(c.experience_years).toFixed(1).replace(/\.0$/, '')} yrs experience</span>
+                <span>⏱ {(() => {
+                  const total = Number(c.experience_years);
+                  const yrs = Math.floor(total);
+                  const mos = Math.round((total - yrs) * 12);
+                  if (mos === 0) return `${yrs} yr${yrs !== 1 ? 's' : ''}`;
+                  if (yrs === 0) return `${mos} mo`;
+                  return `${yrs} yr${yrs !== 1 ? 's' : ''} ${mos} mo`;
+                })()} experience</span>
                 <span>🎓 {c.education}</span>
                 <span>📍 {c.location_hint}</span>
               </div>
@@ -1244,7 +1251,7 @@ Analyze the resume below and return a JSON object with exactly this structure:
   "candidate": {
     "name": "extracted full name or Unknown",
     "role": "inferred current or target job title",
-    "experience_years": <number with up to 1 decimal place — sum the actual months worked across all roles and convert to years, e.g. 2.8 not 2>,
+    "experience_years": <CRITICAL: count exact months for every role by subtracting start date from end date (e.g. Jun 2022 to Feb 2025 = 32 months), sum all roles, divide total months by 12, keep 2 decimal places — e.g. 32 ÷ 12 = 2.67. NEVER round to a whole number. NEVER approximate. If a role is ongoing use the current date Feb 2026>,
     "seniority": "Junior | Mid | Senior | Lead | Principal | Executive",
     "top_skills": ["skill1", "skill2", "skill3", "skill4", "skill5"],
     "education": "highest qualification (degree + field + institution if present)",
