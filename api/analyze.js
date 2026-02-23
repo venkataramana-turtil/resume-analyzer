@@ -1,16 +1,22 @@
-module.exports = async function handler(req, res) {
+export const config = { runtime: 'edge' };
+
+export default async function handler(req) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
   }
 
   const apiKey = process.env.GLM_API_KEY;
   const apiUrl = process.env.GLM_API_URL;
 
   if (!apiKey || !apiUrl) {
-    return res.status(500).json({ error: 'Server misconfiguration: API credentials not set in environment variables.' });
+    return new Response(
+      JSON.stringify({ error: 'Server misconfiguration: API credentials not set in environment variables.' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
   }
 
   try {
+    const body = await req.json();
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -18,12 +24,18 @@ module.exports = async function handler(req, res) {
         'Authorization': `Bearer ${apiKey}`,
         'Accept-Language': 'en-US,en',
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(body),
     });
 
     const data = await response.json();
-    res.status(response.status).json(data);
+    return new Response(JSON.stringify(data), {
+      status: response.status,
+      headers: { 'Content-Type': 'application/json' },
+    });
   } catch (err) {
-    res.status(502).json({ error: `Upstream API error: ${err.message}` });
+    return new Response(
+      JSON.stringify({ error: `Upstream API error: ${err.message}` }),
+      { status: 502, headers: { 'Content-Type': 'application/json' } }
+    );
   }
-};
+}
