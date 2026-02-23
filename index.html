@@ -97,7 +97,8 @@
        CONFIG  (all managed here, not exposed to user)
     ═══════════════════════════════════════════════ */
     const CONFIG = {
-      endpoint: '/api/analyze',
+      apiKey:   'dc05f7df3a9347378b2dff396352015c.patn2LK38cRcIp2Q',
+      endpoint: 'https://api.z.ai/api/coding/paas/v4/chat/completions',
       model:    'glm-4.7',
       maxTokens: 4096,
       temperature: 0,     // 0 = greedy decoding, same resume → same scores every time
@@ -1450,6 +1451,7 @@ ${text}`
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
+                'Authorization': `Bearer ${CONFIG.apiKey}`,
                 'Accept-Language': 'en-US,en',
               },
               body: JSON.stringify({
