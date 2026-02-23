@@ -146,6 +146,34 @@
       return lines[Math.floor(Math.random() * lines.length)];
     };
 
+    /* ── Streaming helpers ── */
+    const SECTION_KEYS = ['candidate','ats','improvement_plan','salary','personal_salary','market_fit','candidate_vs_market'];
+
+    const extractTopLevelKey = (str, key) => {
+      const searchKey = `"${key}"`;
+      let keyIdx = str.indexOf(searchKey);
+      while (keyIdx !== -1) {
+        let i = keyIdx + searchKey.length;
+        while (i < str.length && /\s/.test(str[i])) i++;
+        if (str[i] !== ':') { keyIdx = str.indexOf(searchKey, keyIdx + 1); continue; }
+        i++;
+        while (i < str.length && /\s/.test(str[i])) i++;
+        if (str[i] !== '{') { keyIdx = str.indexOf(searchKey, keyIdx + 1); continue; }
+        const start = i;
+        let depth = 0, inString = false, escape = false;
+        for (; i < str.length; i++) {
+          if (escape)              { escape = false; continue; }
+          if (str[i] === '\\' && inString) { escape = true; continue; }
+          if (str[i] === '"')      { inString = !inString; continue; }
+          if (inString)            continue;
+          if (str[i] === '{')      depth++;
+          else if (str[i] === '}') { depth--; if (depth === 0) { try { return JSON.parse(str.slice(start, i + 1)); } catch { return null; } } }
+        }
+        break;
+      }
+      return null;
+    };
+
     const confidenceColors = {
       'Unlikely':    '#ff4444',
       'Possible':    '#ff9900',
@@ -298,6 +326,91 @@
           {[1,2,3,4].map(i => <div key={i} className="shimmer-block h-44" />)}
         </div>
         <div className="shimmer-block h-56 w-full" />
+      </div>
+    );
+
+    /* ═══════════════════════════════════════════════
+       PER-SECTION SKELETONS
+    ═══════════════════════════════════════════════ */
+    const SK = ({ h = 4, w = 'full', cls = '' }) => (
+      <div className={`shimmer-block rounded-lg ${cls}`} style={{ height: h * 4, width: w === 'full' ? '100%' : w }} />
+    );
+
+    const CandidateCardSkeleton = () => (
+      <div className="rounded-2xl border p-6 fade" style={{ background:'#12121e', borderColor:'#1e1e35' }}>
+        <div className="flex gap-2 items-center mb-2"><SK h={7} w={192} /><SK h={5} w={64} /></div>
+        <SK h={4} w={128} cls="mb-3" />
+        <div className="flex gap-4 mb-5"><SK h={3} w={96} /><SK h={3} w={120} /><SK h={3} w={80} /></div>
+        <SK h={3} w={80} cls="mb-2" />
+        <div className="flex gap-2">{[88,72,80,64,76].map((w,i)=><SK key={i} h={7} w={w} cls="rounded-full" />)}</div>
+      </div>
+    );
+
+    const ATSSkeleton = () => (
+      <div className="rounded-2xl border p-6 fade-1" style={{ background:'#12121e', borderColor:'#1e1e35' }}>
+        <SK h={5} w={140} cls="mb-5" />
+        <div className="flex gap-6">
+          <SK h={40} w={162} cls="rounded-full shrink-0" />
+          <div className="flex-1 space-y-3">{[1,2,3,4,5].map(i=><SK key={i} h={10} />)}</div>
+        </div>
+      </div>
+    );
+
+    const ImprovementSkeleton = () => (
+      <div className="rounded-2xl border overflow-hidden fade-2" style={{ borderColor:'#1e1e35' }}>
+        <div className="p-6" style={{ background:'#12121e' }}>
+          <SK h={5} w={140} cls="mb-4" /><SK h={8} cls="mb-2" /><SK h={3} cls="mb-1" />
+        </div>
+        <div style={{ background:'#0f0f1a' }} className="divide-y divide-[#1e1e35]">
+          {[1,2,3,4].map(i=><div key={i} className="px-6 py-4"><SK h={12} /></div>)}
+        </div>
+      </div>
+    );
+
+    const SalarySkeleton = () => (
+      <div className="rounded-2xl border p-6 fade-2" style={{ background:'#12121e', borderColor:'#1e1e35' }}>
+        <SK h={5} w={140} cls="mb-5" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {[1,2,3,4].map(i=><SK key={i} h={32} cls="rounded-xl" />)}
+        </div>
+      </div>
+    );
+
+    const PersonalSalarySkeleton = () => (
+      <div className="rounded-2xl border overflow-hidden fade-3" style={{ borderColor:'#1e1e35' }}>
+        <SK h={12} cls="rounded-none" />
+        <div className="p-6" style={{ background:'#12121e' }}>
+          <div className="grid grid-cols-3 gap-3 mb-5">{[1,2,3].map(i=><SK key={i} h={24} cls="rounded-xl" />)}</div>
+          <SK h={2} cls="rounded-full mb-5" />
+          <SK h={16} cls="rounded-lg mb-5" />
+          <div className="space-y-2">{[1,2].map(i=><SK key={i} h={12} cls="rounded-lg" />)}</div>
+        </div>
+      </div>
+    );
+
+    const MarketFitSkeleton = () => (
+      <div className="rounded-2xl border p-6 fade-3" style={{ background:'#12121e', borderColor:'#1e1e35' }}>
+        <SK h={5} w={160} cls="mb-5" />
+        <div className="flex gap-6 mb-6">
+          <SK h={28} w={112} cls="rounded-xl shrink-0" />
+          <div className="flex-1 space-y-3"><SK h={5} cls="rounded-full" /><SK h={14} cls="rounded-lg" /></div>
+        </div>
+        <div className="grid grid-cols-3 gap-4">{[1,2,3].map(i=><SK key={i} h={32} cls="rounded-xl" />)}</div>
+      </div>
+    );
+
+    const CandidateVsMarketSkeleton = () => (
+      <div className="rounded-2xl border overflow-hidden fade-4" style={{ borderColor:'#1e1e35' }}>
+        <SK h={12} cls="rounded-none" />
+        <div className="p-6" style={{ background:'#12121e' }}>
+          <SK h={14} cls="rounded-lg mb-5" />
+          <SK h={2} cls="rounded-full mb-6" />
+          <div className="space-y-4 mb-6">{[1,2,3,4,5,6].map(i=><SK key={i} h={8} cls="rounded-lg" />)}</div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">{[1,2,3].map(i=><SK key={i} h={16} cls="rounded-xl" />)}</div>
+            <div className="space-y-2">{[1,2,3].map(i=><SK key={i} h={16} cls="rounded-xl" />)}</div>
+          </div>
+        </div>
       </div>
     );
 
@@ -1164,42 +1277,48 @@
     );
 
     /* ═══════════════════════════════════════════════
-       RESULTS DASHBOARD
+       RESULTS DASHBOARD  (streaming-aware)
     ═══════════════════════════════════════════════ */
-    const ResultsDashboard = ({ data, charCount, market, onReset }) => {
-      const { candidate, ats, improvement_plan, salary, personal_salary, market_fit, candidate_vs_market } = data;
+    const ResultsDashboard = ({ sections, streaming, charCount, market, onReset }) => {
+      const { candidate, ats, improvement_plan, salary, personal_salary, market_fit, candidate_vs_market } = sections;
       return (
         <div className="max-w-4xl mx-auto px-4 py-8 space-y-5">
           {/* Top bar */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between fade">
             <div className="flex items-center gap-2">
               <span className="text-lg">📄</span>
               <h1 className="text-lg font-bold text-white">Resume Analysis</h1>
+              {streaming && (
+                <span className="flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-full"
+                  style={{ background:'rgba(124,58,237,.15)', color:'#a78bfa', border:'1px solid rgba(124,58,237,.3)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background:'#a78bfa' }} />
+                  Analyzing
+                </span>
+              )}
             </div>
             <span className="text-xs px-2 py-1 rounded" style={{ background:'#1e1e35', color:'#6b7280' }}>
               {charCount.toLocaleString()} chars parsed
             </span>
           </div>
 
-          <CandidateCard c={candidate} />
-          <ATSSection ats={ats} />
-          {improvement_plan && (
-            <ImprovementPlanSection plan={improvement_plan} currentScore={ats.score} />
-          )}
-          <SalarySection salary={salary} market={market} />
-          {personal_salary && <PersonalSalarySection ps={personal_salary} market={market} />}
-          <MarketFitSection mf={market_fit} />
-          {candidate_vs_market && <CandidateVsMarketSection cvm={candidate_vs_market} />}
+          {candidate  ? <CandidateCard c={candidate} />                                              : <CandidateCardSkeleton />}
+          {ats        ? <ATSSection ats={ats} />                                                     : <ATSSkeleton />}
+          {improvement_plan ? <ImprovementPlanSection plan={improvement_plan} currentScore={ats?.score ?? 0} /> : <ImprovementSkeleton />}
+          {salary     ? <SalarySection salary={salary} market={market} />                            : <SalarySkeleton />}
+          {personal_salary  ? <PersonalSalarySection ps={personal_salary} market={market} />         : <PersonalSalarySkeleton />}
+          {market_fit ? <MarketFitSection mf={market_fit} />                                         : <MarketFitSkeleton />}
+          {candidate_vs_market ? <CandidateVsMarketSection cvm={candidate_vs_market} />              : <CandidateVsMarketSkeleton />}
 
-          {/* Reset */}
-          <div className="text-center pt-4 pb-10">
-            <button onClick={onReset}
-              className="px-8 py-3 rounded-xl font-bold text-sm transition-opacity hover:opacity-80 border"
-              style={{ borderColor:'#7c3aed', color:'#a78bfa', background:'rgba(124,58,237,.08)',
-                fontFamily:"'Space Mono',monospace" }}>
-              ↩ Analyze Another Resume
-            </button>
-          </div>
+          {!streaming && (
+            <div className="text-center pt-4 pb-10 fade">
+              <button onClick={onReset}
+                className="px-8 py-3 rounded-xl font-bold text-sm transition-opacity hover:opacity-80 border"
+                style={{ borderColor:'#7c3aed', color:'#a78bfa', background:'rgba(124,58,237,.08)',
+                  fontFamily:"'Space Mono',monospace" }}>
+                ↩ Analyze Another Resume
+              </button>
+            </div>
+          )}
         </div>
       );
     };
@@ -1383,7 +1502,8 @@ ${text}`
     const App = () => {
       const [screen, setScreen]       = useState('upload');   // upload | loading | results | error
       const [market, setMarket]       = useState(MARKETS[0]); // default: India
-      const [analysis, setAnalysis]   = useState(null);
+      const [sections, setSections]   = useState({});
+      const [streaming, setStreaming] = useState(false);
       const [error, setError]         = useState('');
       const [charCount, setCharCount] = useState(0);
       const [loadStep, setLoadStep]   = useState('Reading PDF…');
@@ -1417,30 +1537,26 @@ ${text}`
       const run = async (file, roles = []) => {
         setTagline(generateTagline(file));
         setScreen('loading');
+        setSections({});
+        setStreaming(false);
         setError('');
 
         try {
           // Step 1: Parse PDF
           setLoadStep('Reading PDF and extracting text…');
           let raw;
-          try {
-            raw = await extractText(file);
-          } catch (e) {
-            throw new Error('Could not parse the PDF file. Make sure it is a valid PDF.');
-          }
+          try { raw = await extractText(file); }
+          catch { throw new Error('Could not parse the PDF file. Make sure it is a valid PDF.'); }
 
           const cleaned = raw.replace(/\s+/g, ' ').trim();
-          if (cleaned.length < 60) {
-            throw new Error(
-              'This PDF appears to be image-based or contains no extractable text. ' +
-              'Please upload a text-based PDF (not a scanned document).'
-            );
-          }
+          if (cleaned.length < 60) throw new Error(
+            'This PDF appears to be image-based or contains no extractable text. Please upload a text-based PDF (not a scanned document).'
+          );
 
           const truncated = cleaned.slice(0, 4000);
           setCharCount(cleaned.length);
 
-          // Step 2: Send to GLM with auto-retry on 504
+          // Step 2: Fetch with streaming + retry on 504
           const MAX_RETRIES = 3;
           let res, attempt = 0;
           while (true) {
@@ -1459,12 +1575,11 @@ ${text}`
                 messages:    buildMessages(truncated, market, roles),
                 max_tokens:  CONFIG.maxTokens,
                 temperature: CONFIG.temperature,
-                response_format: { type: 'json_object' },
+                stream:      true,
               }),
             });
-
             if (res.status === 504 && attempt < MAX_RETRIES) {
-              await new Promise(r => setTimeout(r, 2000 * attempt)); // 2s, 4s back-off
+              await new Promise(r => setTimeout(r, 2000 * attempt));
               continue;
             }
             break;
@@ -1472,43 +1587,69 @@ ${text}`
 
           if (!res.ok) {
             const errBody = await res.json().catch(() => ({}));
-            throw new Error(
-              errBody?.error?.message ||
-              `API error ${res.status} — please try again.`
-            );
+            throw new Error(errBody?.error?.message || `API error ${res.status} — please try again.`);
           }
 
-          // Step 3: Parse response (json_object mode guarantees valid JSON)
-          setLoadStep('Building your report…');
-          const body    = await res.json();
-          const rawText = body?.choices?.[0]?.message?.content || '';
-
-          let parsed;
-          try {
-            parsed = JSON.parse(rawText);
-          } catch {
-            // fallback: try to extract JSON block in case model wrapped it
-            const match = rawText.match(/\{[\s\S]*\}/);
-            if (!match) throw new Error('Response was not valid JSON — please try again.');
-            parsed = JSON.parse(match[0]);
-          }
-
-          // Validate minimal shape
-          if (!parsed.candidate || !parsed.ats || !parsed.salary || !parsed.market_fit) {
-            throw new Error('The response was incomplete — the model may have run out of output space. Please try again.');
-          }
-
-          setAnalysis(parsed);
+          // Step 3: Switch to results screen immediately, stream sections in
           setScreen('results');
+          setStreaming(true);
+
+          const reader      = res.body.getReader();
+          const decoder     = new TextDecoder();
+          const parsedKeys  = new Set();
+          let accumulated   = '';
+          let buffer        = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data: ')) continue;
+              const data = trimmed.slice(6).trim();
+              if (data === '[DONE]') continue;
+              try {
+                const msg   = JSON.parse(data);
+                const delta = msg.choices?.[0]?.delta?.content ?? '';
+                accumulated += delta;
+
+                for (const key of SECTION_KEYS) {
+                  if (parsedKeys.has(key)) continue;
+                  const section = extractTopLevelKey(accumulated, key);
+                  if (section) {
+                    parsedKeys.add(key);
+                    setSections(prev => ({ ...prev, [key]: section }));
+                  }
+                }
+              } catch { /* ignore malformed SSE lines */ }
+            }
+          }
+
+          // Fallback: if stream ended with missing sections, try parsing full accumulated string
+          if (parsedKeys.size < SECTION_KEYS.length) {
+            try {
+              const match = accumulated.match(/\{[\s\S]*\}/);
+              if (match) setSections(JSON.parse(match[0]));
+            } catch { /* best effort */ }
+          }
+
+          setStreaming(false);
         } catch (err) {
           setError(err.message || 'An unexpected error occurred.');
           setScreen('error');
+          setStreaming(false);
         }
       };
 
       const reset = () => {
         setScreen('upload');
-        setAnalysis(null);
+        setSections({});
+        setStreaming(false);
         setError('');
         setCharCount(0);
         setTagline('');
@@ -1519,8 +1660,8 @@ ${text}`
           {screen === 'upload'  && <UploadZone onFile={run} market={market} setMarket={setMarket} />}
           {screen === 'loading' && <LoadingState step={loadStep} tagline={tagline} />}
           {screen === 'error'   && <ErrorState message={error} onRetry={reset} />}
-          {screen === 'results' && analysis && (
-            <ResultsDashboard data={analysis} charCount={charCount} market={market} onReset={reset} />
+          {screen === 'results' && (
+            <ResultsDashboard sections={sections} streaming={streaming} charCount={charCount} market={market} onReset={reset} />
           )}
         </>
       );
