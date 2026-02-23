@@ -83,12 +83,15 @@ ${text}`
   }
 ];
 
-// Call B — salary benchmarks + personal salary + market fit + candidate vs market
+// Call B — improvement plan + salary benchmarks + personal salary + market fit + candidate vs market
 export const buildMessagesB = (text, market, roles = []) => [
   { role: 'system', content: SYSTEM_PROMPT },
   {
     role: 'user',
     content: `${marketContext(market, roles)}
+
+CRITICAL — Experience calculation (apply this before producing ANY output):
+Count exact months for every role by subtracting start date from end date (e.g. Jun 2022 to Feb 2025 = 32 months). Sum all roles, divide total months by 12, keep 2 decimal places (e.g. 32 ÷ 12 = 2.67 years). If a role is ongoing use the current date Feb 2026. NEVER round to a whole number. This precise decimal figure (e.g. 2.67, not 2 or 3) MUST be the basis for every salary range, personal salary floor/target/stretch, hire_confidence score, Experience Depth score, and all written rationale/summaries below — an extra 8 months of experience has real monetary and market value and must not be discarded.
 
 Analyze the resume below and return a JSON object with EXACTLY this structure (no other keys):
 
@@ -112,7 +115,7 @@ Analyze the resume below and return a JSON object with EXACTLY this structure (n
       "min": <integer>,
       "max": <integer>,
       "median": <integer>,
-      "note": "1-sentence context on why these numbers fit this profile"
+      "note": "1-sentence context citing the candidate's exact experience (e.g. 2.67 yrs) and why these numbers fit this profile"
     },
     "product_based": {
       "label": "Product Based (Google, Microsoft, Adobe, Atlassian)",
@@ -137,20 +140,20 @@ Analyze the resume below and return a JSON object with EXACTLY this structure (n
     }
   },
   "personal_salary": {
-    "floor": <integer - the absolute minimum this candidate should accept; walking away below this is rational>,
-    "target": <integer - what they should confidently lead with in any negotiation; defensible based on their profile>,
+    "floor": <integer - the absolute minimum this candidate should accept based on their exact experience and skills; walking away below this is rational>,
+    "target": <integer - what they should confidently lead with in any negotiation; must reflect their precise tenure in months, not a rounded year figure>,
     "stretch": <integer - ambitious but realistic ceiling; achievable at top-band companies or with competing offers>,
     "currency": "${market.currency}",
-    "rationale": "2-3 sentences explaining why these specific numbers fit THIS candidate — cite their actual seniority, standout skills, and location signals. Be direct and specific, not generic.",
+    "rationale": "2-3 sentences explaining why these specific numbers fit THIS candidate — cite their exact experience in years and months (e.g. '2 years 8 months'), standout skills, and location signals. Be direct and specific, not generic.",
     "negotiation_tips": [
       "specific, actionable tip tailored to this candidate's profile",
       "specific, actionable tip tailored to this candidate's profile"
     ]
   },
   "market_fit": {
-    "hire_confidence": <integer 0-100>,
+    "hire_confidence": <integer 0-100 — factor in the candidate's exact experience in months, not a rounded year; 2 years 8 months is meaningfully different from 2 years>,
     "confidence_label": "Unlikely | Possible | Likely | Strong | Exceptional",
-    "benchmark_summary": "2-3 sentences on how this candidate stacks up against current 2025-2026 market demand for this role",
+    "benchmark_summary": "2-3 sentences on how this candidate stacks up against current 2025-2026 market demand — mention their precise tenure (e.g. '2 years 8 months') not a rounded figure",
     "strengths": ["concrete differentiator 1", "concrete differentiator 2", "concrete differentiator 3"],
     "gaps": ["specific gap vs market demand 1", "specific gap vs market demand 2"],
     "roles_recommended": ["best-fit role title 1", "best-fit role title 2", "best-fit role title 3"]
@@ -158,10 +161,10 @@ Analyze the resume below and return a JSON object with EXACTLY this structure (n
   "candidate_vs_market": {
     "overall_standing": "Top 10% | Top 25% | Average | Below Average | Entry Level",
     "standing_percentile": <integer 0-100 — where this candidate ranks vs typical applicants for this role in this market>,
-    "summary": "2-3 sentences comparing this candidate holistically to the average applicant pool for this role and market — be direct and specific",
+    "summary": "2-3 sentences comparing this candidate holistically to the average applicant pool — cite their exact tenure in years and months (e.g. '2 years 8 months'), be direct and specific",
     "dimensions": [
       { "name": "Technical Skills",        "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" },
-      { "name": "Experience Depth",         "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" },
+      { "name": "Experience Depth",         "candidate_score": <1-10 — based on exact months of experience, not rounded years>, "market_avg_score": <1-10>, "note": "cite exact tenure e.g. '2 yrs 8 mo' and what it means vs market average" },
       { "name": "Achievement Impact",       "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" },
       { "name": "Education & Credentials", "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" },
       { "name": "Domain Expertise",         "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" },
