@@ -1,0 +1,1500 @@
+`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resume Analyzer — AI-Powered</title>
+
+  <!-- React 18 -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    :root {
+      --bg:      #0a0a0f;
+      --surface: #12121e;
+      --s2:      #181828;
+      --border:  #1e1e35;
+      --accent:  #7c3aed;
+      --al:      #a78bfa;
+      --text:    #e2e2e2;
+      --muted:   #6b7280;
+    }
+
+    body {
+      font-family: 'DM Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      margin: 0;
+    }
+    h1, h2, h3, h4 { font-family: 'Space Mono', monospace; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* ── Animations ── */
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes shimmer  { 0% { background-position:-200% 0; } 100% { background-position:200% 0; } }
+    @keyframes spin     { to { transform:rotate(360deg); } }
+    @keyframes pop      { 0%{transform:scale(0.85);opacity:0} 70%{transform:scale(1.04)} 100%{transform:scale(1);opacity:1} }
+
+    .fade   { animation: fadeUp .45s ease both; }
+    .fade-1 { animation: fadeUp .45s .10s ease both; }
+    .fade-2 { animation: fadeUp .45s .20s ease both; }
+    .fade-3 { animation: fadeUp .45s .30s ease both; }
+    .fade-4 { animation: fadeUp .45s .40s ease both; }
+    .fade-5 { animation: fadeUp .45s .50s ease both; }
+
+    .pop    { animation: pop   .5s ease both; }
+
+    .shimmer-block {
+      background: linear-gradient(90deg,#1a1a2e 25%,#252545 50%,#1a1a2e 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.8s infinite;
+      border-radius: 10px;
+    }
+
+    .spin-anim { animation: spin 1s linear infinite; }
+
+    /* SVG ring transition */
+    .ring-arc { transition: stroke-dashoffset 1.6s cubic-bezier(.34,1.56,.64,1); }
+
+    /* Gauge fill */
+    .gauge-fill { transition: width 1.5s cubic-bezier(.34,1.56,.64,1); }
+
+    /* Drop zone */
+    .dz { transition: all .2s ease; border: 2px dashed var(--border); }
+    .dz:hover { border-color: var(--accent); background: rgba(124,58,237,.06); }
+    .dz-active { border-color: var(--accent) !important; background: rgba(124,58,237,.12) !important; transform: scale(1.01); }
+    .dz-filled { border-color: var(--accent) !important; background: rgba(124,58,237,.06) !important; border-style: solid !important; }
+  </style>
+
+  <script>
+    tailwind.config = { theme: { extend: {} } };
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ═══════════════════════════════════════════════
+       CONFIG  (all managed here, not exposed to user)
+    ═══════════════════════════════════════════════ */
+    const CONFIG = {
+      apiKey:   'dc05f7df3a9347378b2dff396352015c.patn2LK38cRcIp2Q',
+      endpoint: 'https://api.z.ai/api/coding/paas/v4/chat/completions',
+      model:    'glm-4.7',
+      maxTokens: 16384,
+      temperature: 0,     // 0 = greedy decoding, same resume → same scores every time
+    };
+
+    /* ═══════════════════════════════════════════════
+       MARKETS
+    ═══════════════════════════════════════════════ */
+    const MARKETS = [
+      { id: 'in',     flag: '🇮🇳', name: 'India',           short: 'India',  currency: 'INR', sym: '₹',    locale: 'en-IN' },
+      { id: 'us',     flag: '🇺🇸', name: 'United States',   short: 'USA',    currency: 'USD', sym: '$',    locale: 'en-US' },
+      { id: 'uk',     flag: '🇬🇧', name: 'United Kingdom',  short: 'UK',     currency: 'GBP', sym: '£',    locale: 'en-GB' },
+      { id: 'de',     flag: '🇩🇪', name: 'Germany',         short: 'Germany',currency: 'EUR', sym: '€',    locale: 'de-DE' },
+      { id: 'ca',     flag: '🇨🇦', name: 'Canada',          short: 'Canada', currency: 'CAD', sym: 'C$',   locale: 'en-CA' },
+      { id: 'au',     flag: '🇦🇺', name: 'Australia',       short: 'Aus.',   currency: 'AUD', sym: 'A$',   locale: 'en-AU' },
+      { id: 'sg',     flag: '🇸🇬', name: 'Singapore',       short: 'SG',     currency: 'SGD', sym: 'S$',   locale: 'en-SG' },
+      { id: 'ae',     flag: '🇦🇪', name: 'UAE',             short: 'UAE',    currency: 'AED', sym: 'AED ', locale: 'en-AE' },
+      { id: 'nl',     flag: '🇳🇱', name: 'Netherlands',     short: 'NL',     currency: 'EUR', sym: '€',    locale: 'nl-NL' },
+      { id: 'remote', flag: '🌍',  name: 'Remote / Global', short: 'Global', currency: 'USD', sym: '$',    locale: 'en-US' },
+    ];
+
+    /* ═══════════════════════════════════════════════
+       HELPERS
+    ═══════════════════════════════════════════════ */
+    const atsColor = s => s <= 40 ? '#ff4444' : s <= 65 ? '#ff9900' : s <= 85 ? '#aacc00' : '#00e676';
+    // sym comes from the selected market object; Indian rupee uses en-IN for lakh/crore commas
+    const fmtMoney = (n, sym = '$') => {
+      const locale = sym.trim() === '₹' ? 'en-IN' : 'en-US';
+      return sym + new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Number(n));
+    };
+
+    const generateTagline = (file) => {
+      const kb   = Math.round(file.size / 1024);
+      const secs = Math.min(45, Math.max(18, Math.round(18 + kb / 18)));
+      const lines = [
+        `Distilling ${kb}KB of career history into pure signal · ~${secs}s`,
+        `Running your resume through 10 ATS filters and a market teardown · ~${secs}s`,
+        `Reading between every bullet point so recruiters don't have to · ~${secs}s`,
+        `Benchmarking you against 2026 hiring standards · ~${secs}s`,
+        `Doing in ${secs}s what most HR teams take 3 weeks to ignore`,
+        `Turning ${kb}KB of hustle into a data-driven story · ~${secs}s`,
+        `Simulating the recruiter's first 30 seconds on your resume · ~${secs}s`,
+        `Cross-referencing your skills against live market demand · ~${secs}s`,
+      ];
+      return lines[Math.floor(Math.random() * lines.length)];
+    };
+
+    const confidenceColors = {
+      'Unlikely':    '#ff4444',
+      'Possible':    '#ff9900',
+      'Likely':      '#aacc00',
+      'Strong':      '#00e676',
+      'Exceptional': '#00e676',
+    };
+    const seniorityStyles = {
+      'Junior':    'bg-blue-900/40 text-blue-300 border-blue-700/60',
+      'Mid':       'bg-violet-900/40 text-violet-300 border-violet-700/60',
+      'Senior':    'bg-amber-900/40 text-amber-300 border-amber-700/60',
+      'Lead':      'bg-orange-900/40 text-orange-300 border-orange-700/60',
+      'Principal': 'bg-red-900/40 text-red-300 border-red-700/60',
+      'Executive': 'bg-pink-900/40 text-pink-300 border-pink-700/60',
+    };
+
+    /* ═══════════════════════════════════════════════
+       CIRCULAR ATS RING
+    ═══════════════════════════════════════════════ */
+    const CircularRing = ({ score }) => {
+      const R = 70, SW = 11;
+      const C = 2 * Math.PI * R;
+      const [offset, setOffset] = useState(C);
+      const color = atsColor(score);
+
+      useEffect(() => {
+        const t = setTimeout(() => setOffset(C - (score / 100) * C), 350);
+        return () => clearTimeout(t);
+      }, [score, C]);
+
+      const cx = R + SW, cy = R + SW;
+      const sz = (R + SW) * 2;
+
+      return (
+        <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} className="pop">
+          {/* Glow filter */}
+          <defs>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="4" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          {/* Track */}
+          <circle cx={cx} cy={cy} r={R} fill="none" stroke="#1e1e35" strokeWidth={SW} />
+          {/* Progress arc */}
+          <circle
+            cx={cx} cy={cy} r={R}
+            fill="none"
+            stroke={color}
+            strokeWidth={SW}
+            strokeLinecap="round"
+            strokeDasharray={C}
+            strokeDashoffset={offset}
+            transform={`rotate(-90 ${cx} ${cy})`}
+            filter="url(#glow)"
+            className="ring-arc"
+          />
+          {/* Score text */}
+          <text x={cx} y={cy - 8} textAnchor="middle" fill="#fff" fontSize="36"
+            fontWeight="700" fontFamily="'Space Mono',monospace">{score}</text>
+          <text x={cx} y={cy + 14} textAnchor="middle" fill="#6b7280" fontSize="11"
+            fontFamily="'DM Mono',monospace">ATS Score</text>
+        </svg>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       SALARY BAR
+    ═══════════════════════════════════════════════ */
+    const SalaryBar = ({ min, median, max, sym }) => {
+      const range = (max - min) || 1;
+      const medPct = ((median - min) / range) * 100;
+      return (
+        <div className="my-3">
+          <div className="relative h-5 rounded-full overflow-hidden" style={{ background: '#1a1a2e' }}>
+            <div className="absolute inset-0 rounded-full"
+              style={{ background: 'linear-gradient(to right,#4c1d95,#7c3aed,#a78bfa)' }} />
+            {/* Median marker */}
+            <div className="absolute top-0 bottom-0 w-0.5"
+              style={{ left: `${medPct}%`, background: 'rgba(255,255,255,0.9)',
+                boxShadow: '0 0 6px rgba(255,255,255,0.7)' }} />
+          </div>
+          <div className="flex justify-between text-xs mt-1.5" style={{ color: '#6b7280' }}>
+            <span>{fmtMoney(min, sym)}</span>
+            <span className="font-bold" style={{ color: '#a78bfa' }}>↑ {fmtMoney(median, sym)} median</span>
+            <span>{fmtMoney(max, sym)}</span>
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       SALARY CARD
+    ═══════════════════════════════════════════════ */
+    const cardMeta = {
+      service_based: { icon: '🏢', from: 'from-blue-900/20',   border: 'border-blue-800/30'   },
+      product_based: { icon: '🚀', from: 'from-violet-900/20', border: 'border-violet-800/30' },
+      startup:       { icon: '⚡', from: 'from-pink-900/20',   border: 'border-pink-800/30'   },
+      freelance:     { icon: '💼', from: 'from-amber-900/20',  border: 'border-amber-800/30'  },
+    };
+
+    const SalaryCard = ({ type, label, min, median, max, note, delayClass, sym }) => {
+      const m = cardMeta[type] || cardMeta.service_based;
+      return (
+        <div className={`${delayClass} rounded-xl border p-4 bg-gradient-to-br ${m.from} to-transparent ${m.border}`}>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xl">{m.icon}</span>
+            <span className="text-xs font-bold text-white/90 leading-tight">{label}</span>
+          </div>
+          <SalaryBar min={min} median={median} max={max} sym={sym} />
+          <div className="text-center">
+            <span className="text-base font-bold text-white">{fmtMoney(min, sym)}</span>
+            <span className="text-gray-500 mx-2 text-sm">—</span>
+            <span className="text-base font-bold text-white">{fmtMoney(max, sym)}</span>
+          </div>
+          {note && <p className="text-xs mt-2" style={{ color: '#6b7280' }}>{note}</p>}
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       GAUGE BAR
+    ═══════════════════════════════════════════════ */
+    const GaugeBar = ({ value }) => {
+      const [w, setW] = useState(0);
+      useEffect(() => { const t = setTimeout(() => setW(value), 500); return () => clearTimeout(t); }, [value]);
+      return (
+        <div className="relative h-5 rounded-full overflow-hidden" style={{ background: '#1e1e35' }}>
+          <div className="gauge-fill h-full rounded-full"
+            style={{ width: `${w}%`,
+              background: 'linear-gradient(to right,#ff4444,#ff9900 35%,#aacc00 65%,#00e676)' }} />
+          <div className="absolute inset-0 flex items-center justify-end pr-3">
+            <span className="text-xs font-bold text-white/90">{value}%</span>
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       SKELETON LOADER
+    ═══════════════════════════════════════════════ */
+    const Skeleton = () => (
+      <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+        <div className="shimmer-block h-36 w-full" />
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="shimmer-block h-64 md:col-span-2" />
+          <div className="shimmer-block h-64 md:col-span-3" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[1,2,3,4].map(i => <div key={i} className="shimmer-block h-44" />)}
+        </div>
+        <div className="shimmer-block h-56 w-full" />
+      </div>
+    );
+
+    /* ═══════════════════════════════════════════════
+       CANDIDATE CARD
+    ═══════════════════════════════════════════════ */
+    const CandidateCard = ({ c }) => {
+      const sc = seniorityStyles[c.seniority] || 'bg-gray-700/40 text-gray-300 border-gray-600';
+      return (
+        <div className="fade rounded-2xl border p-6" style={{ background:'#12121e', borderColor:'#1e1e35' }}>
+          <div className="flex flex-wrap items-start gap-3 mb-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <h2 className="text-2xl font-bold text-white truncate">{c.name}</h2>
+                <span className={`text-xs px-2 py-0.5 rounded border font-bold shrink-0 ${sc}`}>
+                  {c.seniority}
+                </span>
+              </div>
+              <p className="text-sm mb-3" style={{ color: '#a78bfa' }}>{c.role}</p>
+              <div className="flex flex-wrap gap-4 text-xs" style={{ color: '#9ca3af' }}>
+                <span>⏱ {Number(c.experience_years).toFixed(1).replace(/\.0$/, '')} yrs experience</span>
+                <span>🎓 {c.education}</span>
+                <span>📍 {c.location_hint}</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-bold mb-2" style={{ color: '#6b7280' }}>TOP SKILLS</p>
+            <div className="flex flex-wrap gap-2">
+              {(c.top_skills || []).map((sk, i) => (
+                <span key={i} className="text-xs px-3 py-1 rounded-full border"
+                  style={{ borderColor:'#7c3aed', color:'#a78bfa', background:'rgba(124,58,237,.12)' }}>
+                  {sk}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       ATS SECTION
+    ═══════════════════════════════════════════════ */
+    const ATSSection = ({ ats }) => {
+      const col = atsColor(ats.score);
+      return (
+        <div className="fade-1 rounded-2xl border p-6" style={{ background:'#12121e', borderColor:'#1e1e35' }}>
+          <h3 className="text-lg font-bold mb-5">ATS Analysis</h3>
+
+          <div className="flex flex-col md:flex-row gap-6">
+            {/* Ring + verdict */}
+            <div className="flex flex-col items-center gap-3 shrink-0">
+              <CircularRing score={ats.score} />
+              <span className="text-sm font-bold px-4 py-1 rounded-full border"
+                style={{ color:col, borderColor:col, background:`${col}22` }}>
+                {ats.verdict}
+              </span>
+            </div>
+
+            {/* Checklist */}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold mb-2" style={{ color:'#6b7280' }}>CHECKLIST</p>
+              <div>
+                {(ats.passed_checks || []).map((chk, i) => (
+                  <div key={i} className="flex items-start gap-3 py-2 border-b"
+                    style={{ borderColor:'#1e1e35' }}>
+                    <span className="shrink-0 mt-0.5">{chk.status ? '✅' : '❌'}</span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium"
+                        style={{ color: chk.status ? '#e2e2e2' : '#f87171' }}>{chk.label}</div>
+                      {chk.note && (
+                        <div className="text-xs mt-0.5" style={{ color:'#6b7280' }}>{chk.note}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Critical Issues */}
+          {ats.critical_issues?.length > 0 && (
+            <div className="mt-6">
+              <p className="text-xs font-bold mb-2" style={{ color:'#6b7280' }}>CRITICAL ISSUES</p>
+              <div className="space-y-2">
+                {ats.critical_issues.map((issue, i) => (
+                  <div key={i} className="flex gap-2 p-3 rounded-lg border text-xs"
+                    style={{ background:'rgba(255,68,68,.07)', borderColor:'rgba(255,68,68,.3)', color:'#fca5a5' }}>
+                    <span className="shrink-0">⚠️</span><span>{issue}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Quick Wins */}
+          {ats.quick_wins?.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-bold mb-2" style={{ color:'#6b7280' }}>QUICK WINS</p>
+              <div className="flex flex-wrap gap-2">
+                {ats.quick_wins.map((win, i) => (
+                  <span key={i} className="text-xs px-3 py-1.5 rounded-full border"
+                    style={{ background:'rgba(0,230,118,.07)', borderColor:'rgba(0,230,118,.3)', color:'#6ee7b7' }}>
+                    ✨ {win}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       SALARY SECTION
+    ═══════════════════════════════════════════════ */
+    const SalarySection = ({ salary, market }) => {
+      const delays = ['fade-2','fade-3','fade-4','fade-5'];
+      const types = ['service_based','product_based','startup','freelance'];
+      return (
+        <div className="fade-2 rounded-2xl border p-6" style={{ background:'#12121e', borderColor:'#1e1e35' }}>
+          <div className="flex items-center gap-2 mb-5">
+            <h3 className="text-lg font-bold">Salary Ranges</h3>
+            <span className="text-xs px-2 py-0.5 rounded" style={{ background:'#1e1e35', color:'#6b7280' }}>
+              {salary.currency}
+            </span>
+            <span className="text-xs px-2 py-0.5 rounded flex items-center gap-1"
+              style={{ background:'rgba(124,58,237,.15)', color:'#a78bfa', border:'1px solid rgba(124,58,237,.3)' }}>
+              {market.flag} {market.name}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {types.map((t, i) => (
+              <SalaryCard key={t} type={t} delayClass={delays[i]} sym={market.sym} {...salary[t]} />
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       PERSONAL SALARY SECTION
+    ═══════════════════════════════════════════════ */
+    const PersonalSalarySection = ({ ps, market }) => {
+      const sym = market.sym;
+      const range = (ps.stretch - ps.floor) || 1;
+      const targetPct = ((ps.target - ps.floor) / range) * 100;
+
+      // Animated target number counter
+      const [displayTarget, setDisplayTarget] = useState(0);
+      useEffect(() => {
+        const steps = 40;
+        const increment = ps.target / steps;
+        let current = 0;
+        const id = setInterval(() => {
+          current += increment;
+          if (current >= ps.target) { setDisplayTarget(ps.target); clearInterval(id); }
+          else setDisplayTarget(Math.round(current));
+        }, 30);
+        return () => clearInterval(id);
+      }, [ps.target]);
+
+      return (
+        <div className="fade-3 rounded-2xl border overflow-hidden" style={{ borderColor:'#1e1e35' }}>
+          {/* Header bar */}
+          <div className="px-6 py-3 flex items-center justify-between"
+            style={{ background:'linear-gradient(135deg,rgba(124,58,237,.25),rgba(168,85,247,.1))',
+              borderBottom:'1px solid #1e1e35' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-base">💰</span>
+              <h3 className="text-sm font-bold text-white">What You Can Demand</h3>
+            </div>
+            <span className="text-xs px-2 py-0.5 rounded"
+              style={{ background:'rgba(124,58,237,.2)', color:'#a78bfa',
+                border:'1px solid rgba(124,58,237,.3)' }}>
+              {market.flag} {market.name} · {ps.currency}
+            </span>
+          </div>
+
+          <div className="p-6" style={{ background:'#12121e' }}>
+            {/* Three number cards */}
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              {/* Floor */}
+              <div className="rounded-xl p-4 text-center border"
+                style={{ background:'rgba(255,153,0,.06)', borderColor:'rgba(255,153,0,.2)' }}>
+                <p className="text-xs font-bold mb-1" style={{ color:'#6b7280' }}>FLOOR</p>
+                <p className="text-lg font-bold" style={{ color:'#fbbf24', fontFamily:"'Space Mono',monospace" }}>
+                  {fmtMoney(ps.floor, sym)}
+                </p>
+                <p className="text-xs mt-1" style={{ color:'#4b5563' }}>Walk-away min</p>
+              </div>
+
+              {/* Target — hero card */}
+              <div className="rounded-xl p-4 text-center border relative"
+                style={{ background:'rgba(124,58,237,.12)', borderColor:'rgba(124,58,237,.5)',
+                  boxShadow:'0 0 24px rgba(124,58,237,.2)' }}>
+                <div className="absolute -top-2.5 left-1/2 -translate-x-1/2">
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                    style={{ background:'#7c3aed', color:'#fff' }}>YOUR ASK</span>
+                </div>
+                <p className="text-xs font-bold mb-1 mt-1" style={{ color:'#a78bfa' }}>TARGET</p>
+                <p className="text-2xl font-bold text-white" style={{ fontFamily:"'Space Mono',monospace" }}>
+                  {fmtMoney(displayTarget, sym)}
+                </p>
+                <p className="text-xs mt-1" style={{ color:'#7c3aed' }}>Lead with this</p>
+              </div>
+
+              {/* Stretch */}
+              <div className="rounded-xl p-4 text-center border"
+                style={{ background:'rgba(0,230,118,.06)', borderColor:'rgba(0,230,118,.2)' }}>
+                <p className="text-xs font-bold mb-1" style={{ color:'#6b7280' }}>STRETCH</p>
+                <p className="text-lg font-bold" style={{ color:'#6ee7b7', fontFamily:"'Space Mono',monospace" }}>
+                  {fmtMoney(ps.stretch, sym)}
+                </p>
+                <p className="text-xs mt-1" style={{ color:'#4b5563' }}>With competing offers</p>
+              </div>
+            </div>
+
+            {/* Range bar with markers */}
+            <div className="relative mb-6">
+              {/* Track */}
+              <div className="h-2 rounded-full" style={{
+                background:'linear-gradient(to right,rgba(251,191,36,.4),rgba(124,58,237,.6),rgba(110,231,183,.4))'
+              }} />
+              {/* Target marker */}
+              <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2"
+                style={{ left:`${targetPct}%` }}>
+                <div className="w-4 h-4 rounded-full border-2 border-white"
+                  style={{ background:'#7c3aed', boxShadow:'0 0 10px rgba(124,58,237,.8)' }} />
+              </div>
+              {/* Floor dot */}
+              <div className="absolute top-1/2 -translate-y-1/2 left-0 w-2.5 h-2.5 rounded-full -translate-x-1/2"
+                style={{ background:'#fbbf24' }} />
+              {/* Stretch dot */}
+              <div className="absolute top-1/2 -translate-y-1/2 right-0 w-2.5 h-2.5 rounded-full translate-x-1/2"
+                style={{ background:'#6ee7b7' }} />
+            </div>
+
+            {/* Rationale */}
+            {ps.rationale && (
+              <p className="text-sm leading-relaxed mb-5 pb-5 border-b" style={{
+                color:'#9ca3af', borderColor:'#1e1e35'
+              }}>
+                {ps.rationale}
+              </p>
+            )}
+
+            {/* Negotiation tips */}
+            {ps.negotiation_tips?.length > 0 && (
+              <div>
+                <p className="text-xs font-bold mb-3" style={{ color:'#6b7280' }}>NEGOTIATION TIPS</p>
+                <div className="space-y-2">
+                  {ps.negotiation_tips.map((tip, i) => (
+                    <div key={i} className="flex gap-3 text-xs p-3 rounded-lg"
+                      style={{ background:'rgba(124,58,237,.07)', border:'1px solid rgba(124,58,237,.15)' }}>
+                      <span className="shrink-0 font-bold" style={{ color:'#7c3aed' }}>0{i + 1}</span>
+                      <span style={{ color:'#c4b5fd' }}>{tip}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       IMPROVEMENT PLAN SECTION
+    ═══════════════════════════════════════════════ */
+    const priorityMeta = {
+      'Critical': { color: '#ff4444', bg: 'rgba(255,68,68,.08)',   border: 'rgba(255,68,68,.25)',   dot: '🔴' },
+      'High':     { color: '#ff9900', bg: 'rgba(255,153,0,.08)',   border: 'rgba(255,153,0,.25)',   dot: '🟠' },
+      'Medium':   { color: '#aacc00', bg: 'rgba(170,204,0,.08)',   border: 'rgba(170,204,0,.25)',   dot: '🟡' },
+    };
+
+    const ImprovementPlanSection = ({ plan, currentScore }) => {
+      const tips    = plan.tips || [];
+      const potScore = plan.potential_score ?? 100;
+      const gap     = potScore - currentScore;
+
+      // Animate the potential score bar
+      const [barW, setBarW] = useState(0);
+      useEffect(() => {
+        const t = setTimeout(() => setBarW(potScore), 400);
+        return () => clearTimeout(t);
+      }, [potScore]);
+
+      return (
+        <div className="fade-2 rounded-2xl border overflow-hidden" style={{ borderColor:'#1e1e35' }}>
+
+          {/* Header */}
+          <div className="px-6 py-4 border-b" style={{ background:'#12121e', borderColor:'#1e1e35' }}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Road to 100</h3>
+                <p className="text-xs mt-0.5" style={{ color:'#6b7280' }}>
+                  Apply these fixes to unlock {gap > 0 ? `+${gap} pts` : 'your full potential'}
+                </p>
+              </div>
+              {/* Score jump */}
+              <div className="flex items-center gap-3">
+                <div className="text-center">
+                  <div className="text-2xl font-bold" style={{ color: atsColor(currentScore), fontFamily:"'Space Mono',monospace" }}>
+                    {currentScore}
+                  </div>
+                  <div className="text-xs" style={{ color:'#4b5563' }}>now</div>
+                </div>
+                <div className="text-xl" style={{ color:'#4b5563' }}>→</div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold" style={{ color: atsColor(potScore), fontFamily:"'Space Mono',monospace" }}>
+                    {potScore}
+                  </div>
+                  <div className="text-xs" style={{ color:'#4b5563' }}>potential</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Progress bar: current filled, potential as lighter extension */}
+            <div className="relative h-3 rounded-full overflow-hidden" style={{ background:'#1e1e35' }}>
+              {/* Potential fill */}
+              <div className="gauge-fill absolute inset-y-0 left-0 rounded-full"
+                style={{ width:`${barW}%`, background:'rgba(124,58,237,.25)' }} />
+              {/* Current fill */}
+              <div className="absolute inset-y-0 left-0 rounded-full"
+                style={{ width:`${currentScore}%`,
+                  background:`linear-gradient(to right,${atsColor(currentScore)}99,${atsColor(currentScore)})` }} />
+              {/* Potential marker */}
+              <div className="absolute top-0 bottom-0 w-px"
+                style={{ left:`${potScore}%`, background:'rgba(255,255,255,.4)' }} />
+            </div>
+            <div className="flex justify-between text-xs mt-1" style={{ color:'#4b5563' }}>
+              <span>0</span>
+              <span style={{ color: atsColor(potScore) }}>max reachable: {potScore}</span>
+              <span>100</span>
+            </div>
+          </div>
+
+          {/* Tips list */}
+          <div className="divide-y" style={{ background:'#0f0f1a', borderColor:'#1e1e35' }}>
+            {tips.map((tip, i) => {
+              const meta = priorityMeta[tip.priority] || priorityMeta['Medium'];
+              return (
+                <div key={i} className="px-6 py-4 flex gap-4 items-start transition-colors hover:bg-white/[0.02]">
+                  {/* Left: priority dot + impact */}
+                  <div className="shrink-0 flex flex-col items-center gap-1.5 pt-0.5" style={{ minWidth: 44 }}>
+                    <span className="text-base leading-none">{meta.dot}</span>
+                    <span className="text-xs font-bold px-1.5 py-0.5 rounded"
+                      style={{ background: meta.bg, color: meta.color, border:`1px solid ${meta.border}`,
+                        fontFamily:"'Space Mono',monospace", whiteSpace:'nowrap' }}>
+                      +{tip.score_impact}
+                    </span>
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="text-xs font-bold text-white">{tip.title}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full"
+                        style={{ background:'rgba(255,255,255,.05)', color:'#6b7280' }}>
+                        {tip.category}
+                      </span>
+                    </div>
+                    <p className="text-xs leading-relaxed" style={{ color:'#9ca3af' }}>{tip.detail}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       MARKET FIT SECTION
+    ═══════════════════════════════════════════════ */
+    const MarketFitSection = ({ mf }) => {
+      const col = confidenceColors[mf.confidence_label] || '#a78bfa';
+      return (
+        <div className="fade-3 rounded-2xl border p-6" style={{ background:'#12121e', borderColor:'#1e1e35' }}>
+          <h3 className="text-lg font-bold mb-5">Hiring Confidence</h3>
+
+          <div className="flex flex-col sm:flex-row gap-6 items-start mb-6">
+            {/* Big number */}
+            <div className="flex flex-col items-center gap-2 shrink-0">
+              <span className="text-6xl font-bold pop" style={{ color:col }}>
+                {mf.hire_confidence}%
+              </span>
+              <span className="text-sm font-bold px-3 py-1 rounded-full border"
+                style={{ color:col, borderColor:col, background:`${col}22` }}>
+                {mf.confidence_label}
+              </span>
+            </div>
+            {/* Gauge + summary */}
+            <div className="flex-1 space-y-4">
+              <GaugeBar value={mf.hire_confidence} />
+              <p className="text-sm leading-relaxed" style={{ color:'#9ca3af' }}>
+                {mf.benchmark_summary}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Strengths */}
+            <div>
+              <p className="text-xs font-bold mb-2" style={{ color:'#6b7280' }}>YOUR STRENGTHS</p>
+              <div className="flex flex-col gap-2">
+                {(mf.strengths || []).map((s, i) => (
+                  <span key={i} className="text-xs px-3 py-2 rounded-lg text-center"
+                    style={{ background:'rgba(0,230,118,.09)', color:'#6ee7b7',
+                      border:'1px solid rgba(0,230,118,.2)' }}>{s}</span>
+                ))}
+              </div>
+            </div>
+            {/* Gaps */}
+            <div>
+              <p className="text-xs font-bold mb-2" style={{ color:'#6b7280' }}>MARKET GAPS</p>
+              <div className="flex flex-col gap-2">
+                {(mf.gaps || []).map((g, i) => (
+                  <span key={i} className="text-xs px-3 py-2 rounded-lg text-center"
+                    style={{ background:'rgba(255,153,0,.09)', color:'#fbbf24',
+                      border:'1px solid rgba(255,153,0,.2)' }}>{g}</span>
+                ))}
+              </div>
+            </div>
+            {/* Roles */}
+            <div>
+              <p className="text-xs font-bold mb-2" style={{ color:'#6b7280' }}>ROLES TO TARGET</p>
+              <div className="flex flex-col gap-2">
+                {(mf.roles_recommended || []).map((r, i) => (
+                  <span key={i} className="text-xs px-3 py-2 rounded-lg text-center cursor-pointer transition-opacity hover:opacity-75"
+                    style={{ background:'rgba(124,58,237,.12)', color:'#a78bfa',
+                      border:'1px solid rgba(124,58,237,.3)' }}>→ {r}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       CANDIDATE VS MARKET SECTION
+    ═══════════════════════════════════════════════ */
+    const cvmStandingMeta = {
+      'Top 10%':      { color: '#00e676', bg: 'rgba(0,230,118,.1)',  border: 'rgba(0,230,118,.3)'  },
+      'Top 25%':      { color: '#aacc00', bg: 'rgba(170,204,0,.1)',  border: 'rgba(170,204,0,.3)'  },
+      'Average':      { color: '#ff9900', bg: 'rgba(255,153,0,.1)',  border: 'rgba(255,153,0,.3)'  },
+      'Below Average':{ color: '#ff4444', bg: 'rgba(255,68,68,.1)',  border: 'rgba(255,68,68,.3)'  },
+      'Entry Level':  { color: '#ff4444', bg: 'rgba(255,68,68,.1)',  border: 'rgba(255,68,68,.3)'  },
+    };
+
+    const CandidateVsMarketSection = ({ cvm }) => {
+      const meta = cvmStandingMeta[cvm.overall_standing] || cvmStandingMeta['Average'];
+      const [animated, setAnimated] = useState(false);
+      const [pctLeft, setPctLeft]   = useState(0);
+
+      useEffect(() => {
+        const t = setTimeout(() => { setAnimated(true); setPctLeft(cvm.standing_percentile); }, 450);
+        return () => clearTimeout(t);
+      }, [cvm.standing_percentile]);
+
+      return (
+        <div className="fade-4 rounded-2xl border overflow-hidden" style={{ borderColor: '#1e1e35' }}>
+          {/* Header */}
+          <div className="px-6 py-4 flex items-center justify-between"
+            style={{ background: 'linear-gradient(135deg,rgba(59,130,246,.15),rgba(124,58,237,.1))',
+              borderBottom: '1px solid #1e1e35' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-base">📊</span>
+              <h3 className="text-sm font-bold text-white">You vs. Market Average</h3>
+            </div>
+            <span className="text-xs font-bold px-3 py-1 rounded-full border"
+              style={{ color: meta.color, background: meta.bg, borderColor: meta.border }}>
+              {cvm.overall_standing}
+            </span>
+          </div>
+
+          <div className="p-6" style={{ background: '#12121e' }}>
+            {/* Summary */}
+            <p className="text-sm leading-relaxed mb-5 pb-5 border-b"
+              style={{ color: '#9ca3af', borderColor: '#1e1e35' }}>
+              {cvm.summary}
+            </p>
+
+            {/* Percentile strip */}
+            <div className="mb-7">
+              <p className="text-xs font-bold mb-3" style={{ color: '#6b7280' }}>MARKET PERCENTILE</p>
+              <div className="relative h-2 rounded-full"
+                style={{ background: 'linear-gradient(to right,#7f1d1d 0%,#d97706 50%,#166534 100%)' }}>
+                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 border-white"
+                  style={{
+                    left: `${pctLeft}%`,
+                    background: meta.color,
+                    boxShadow: `0 0 10px ${meta.color}99`,
+                    transition: 'left 1.5s cubic-bezier(.34,1.56,.64,1)',
+                  }} />
+              </div>
+              <div className="flex justify-between text-xs mt-2" style={{ color: '#4b5563' }}>
+                <span>0th</span>
+                <span className="font-bold" style={{ color: meta.color, fontFamily:"'Space Mono',monospace" }}>
+                  {cvm.standing_percentile}th percentile
+                </span>
+                <span>100th</span>
+              </div>
+            </div>
+
+            {/* Dimension breakdown */}
+            <div className="mb-7">
+              <p className="text-xs font-bold mb-4" style={{ color: '#6b7280' }}>DIMENSION BREAKDOWN</p>
+              <div className="space-y-4">
+                {(cvm.dimensions || []).map((dim, i) => {
+                  const ahead = dim.candidate_score >= dim.market_avg_score;
+                  const cPct  = (dim.candidate_score / 10) * 100;
+                  const mPct  = (dim.market_avg_score / 10) * 100;
+                  return (
+                    <div key={i}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-medium" style={{ color: '#c4c4d4' }}>{dim.name}</span>
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span className="font-bold" style={{ color: ahead ? '#6ee7b7' : '#f87171',
+                            fontFamily:"'Space Mono',monospace" }}>{dim.candidate_score}/10</span>
+                          <span style={{ color: '#4b5563' }}>· avg</span>
+                          <span style={{ color: '#6b7280', fontFamily:"'Space Mono',monospace" }}>
+                            {dim.market_avg_score}/10
+                          </span>
+                        </div>
+                      </div>
+                      <div className="relative h-3 rounded-full overflow-hidden" style={{ background: '#1e1e35' }}>
+                        {/* Candidate bar */}
+                        <div className="gauge-fill absolute inset-y-0 left-0 rounded-full"
+                          style={{
+                            width: animated ? `${cPct}%` : '0%',
+                            background: ahead
+                              ? 'linear-gradient(to right,#5b21b6,#8b5cf6)'
+                              : 'linear-gradient(to right,#7f1d1d,#ef4444)',
+                          }} />
+                        {/* Market avg marker */}
+                        <div className="absolute top-0 bottom-0 w-0.5"
+                          style={{ left: `${mPct}%`, background: 'rgba(255,255,255,0.45)', zIndex: 1 }} />
+                      </div>
+                      {dim.note && (
+                        <p className="text-xs mt-0.5" style={{ color: '#4b5563' }}>{dim.note}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Legend */}
+              <div className="flex items-center gap-5 mt-4 text-xs" style={{ color: '#4b5563' }}>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-7 h-2 rounded-full" style={{ background: '#7c3aed' }} />
+                  <span>You</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-px h-3" style={{ background: 'rgba(255,255,255,0.45)' }} />
+                  <span>Market average</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Pros / Cons */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Pros */}
+              <div>
+                <p className="text-xs font-bold mb-3" style={{ color: '#6b7280' }}>YOUR ADVANTAGES</p>
+                <div className="space-y-2">
+                  {(cvm.pros || []).map((pro, i) => (
+                    <div key={i} className="p-3 rounded-xl flex gap-3"
+                      style={{ background: 'rgba(0,230,118,.06)', border: '1px solid rgba(0,230,118,.18)' }}>
+                      <span className="shrink-0 text-sm leading-none mt-0.5" style={{ color: '#6ee7b7' }}>↑</span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                          <span className="text-xs font-bold" style={{ color: '#6ee7b7' }}>{pro.title}</span>
+                          <span className="text-xs px-1.5 py-0.5 rounded"
+                            style={{ background: 'rgba(0,230,118,.1)', color: '#4d7a60', fontSize: '0.6rem' }}>
+                            {pro.category}
+                          </span>
+                        </div>
+                        <p className="text-xs leading-relaxed" style={{ color: '#6b7280' }}>{pro.detail}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Cons */}
+              <div>
+                <p className="text-xs font-bold mb-3" style={{ color: '#6b7280' }}>MARKET GAPS</p>
+                <div className="space-y-2">
+                  {(cvm.cons || []).map((con, i) => (
+                    <div key={i} className="p-3 rounded-xl flex gap-3"
+                      style={{ background: 'rgba(255,68,68,.06)', border: '1px solid rgba(255,68,68,.18)' }}>
+                      <span className="shrink-0 text-sm leading-none mt-0.5" style={{ color: '#f87171' }}>↓</span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                          <span className="text-xs font-bold" style={{ color: '#f87171' }}>{con.title}</span>
+                          <span className="text-xs px-1.5 py-0.5 rounded"
+                            style={{ background: 'rgba(255,68,68,.1)', color: '#7a4040', fontSize: '0.6rem' }}>
+                            {con.category}
+                          </span>
+                        </div>
+                        <p className="text-xs leading-relaxed" style={{ color: '#6b7280' }}>{con.detail}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       ROLE INPUT
+    ═══════════════════════════════════════════════ */
+    const RoleInput = ({ roles, setRoles }) => {
+      const [input, setInput] = useState('');
+      const inputRef = useRef(null);
+
+      const commit = () => {
+        const val = input.trim().replace(/,+$/, '').trim();
+        if (val && roles.length < 5 && !roles.includes(val)) {
+          setRoles([...roles, val]);
+        }
+        setInput('');
+      };
+
+      const onKeyDown = e => {
+        if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commit(); }
+        else if (e.key === 'Backspace' && !input && roles.length) {
+          setRoles(roles.slice(0, -1));
+        }
+      };
+
+      return (
+        <div className="mb-5">
+          <label className="block text-xs font-bold mb-1.5" style={{ color:'#6b7280' }}>
+            TARGET ROLES{' '}
+            <span style={{ color:'#4b5563', fontWeight:400 }}>(optional)</span>
+          </label>
+
+          {/* Tag input box */}
+          <div
+            className="flex flex-wrap gap-1.5 p-2.5 rounded-xl border cursor-text min-h-[48px] transition-colors"
+            style={{ background:'#12121e', borderColor: roles.length ? '#7c3aed' : '#1e1e35' }}
+            onClick={() => inputRef.current?.focus()}
+          >
+            {roles.map((r, i) => (
+              <span key={i} className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full"
+                style={{ background:'rgba(124,58,237,.2)', color:'#a78bfa',
+                  border:'1px solid rgba(124,58,237,.4)' }}>
+                {r}
+                <button
+                  onClick={e => { e.stopPropagation(); setRoles(roles.filter((_,j)=>j!==i)); }}
+                  className="opacity-60 hover:opacity-100 transition-opacity leading-none ml-0.5"
+                  style={{ fontSize:'0.85rem' }}>×</button>
+              </span>
+            ))}
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              onBlur={commit}
+              placeholder={roles.length ? '' : 'e.g. Staff Engineer, Product Manager…'}
+              className="flex-1 min-w-[140px] bg-transparent outline-none text-xs"
+              style={{ color:'#e2e2e2', fontFamily:"'DM Mono',monospace" }}
+            />
+          </div>
+          <p className="text-xs mt-1" style={{ color:'#4b5563' }}>
+            Press <kbd style={{ background:'#1e1e35', padding:'0 4px', borderRadius:3, color:'#6b7280' }}>Enter</kbd> or{' '}
+            <kbd style={{ background:'#1e1e35', padding:'0 4px', borderRadius:3, color:'#6b7280' }}>,</kbd> to add · up to 5 roles
+          </p>
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       MARKET PICKER
+    ═══════════════════════════════════════════════ */
+    const MarketPicker = ({ market, setMarket }) => (
+      <div className="mb-6">
+        <p className="text-xs font-bold mb-2" style={{ color:'#6b7280' }}>TARGET MARKET</p>
+        <div className="grid grid-cols-5 gap-2">
+          {MARKETS.map(m => {
+            const active = market.id === m.id;
+            return (
+              <button key={m.id} onClick={() => setMarket(m)}
+                className="flex flex-col items-center gap-1 py-2 px-1 rounded-xl border transition-all duration-150"
+                style={{
+                  background:   active ? 'rgba(124,58,237,.2)' : '#12121e',
+                  borderColor:  active ? '#7c3aed' : '#1e1e35',
+                  boxShadow:    active ? '0 0 12px rgba(124,58,237,.3)' : 'none',
+                  transform:    active ? 'scale(1.05)' : 'scale(1)',
+                }}
+              >
+                <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>{m.flag}</span>
+                <span className="text-center leading-tight" style={{
+                  fontSize: '0.6rem', fontWeight: 700,
+                  color: active ? '#a78bfa' : '#6b7280',
+                }}>{m.short}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs mt-2" style={{ color:'#4b5563' }}>
+          Salaries calibrated to <span style={{ color:'#a78bfa' }}>{market.name}</span> standards in{' '}
+          <span style={{ color:'#a78bfa' }}>{market.currency}</span>
+        </p>
+      </div>
+    );
+
+    /* ═══════════════════════════════════════════════
+       UPLOAD ZONE
+    ═══════════════════════════════════════════════ */
+    const UploadZone = ({ onFile, market, setMarket }) => {
+      const [dragging, setDragging] = useState(false);
+      const [file, setFile]         = useState(null);
+      const [roles, setRoles]       = useState([]);
+      const inputRef = useRef(null);
+
+      const pick = f => { if (f && f.type === 'application/pdf') setFile(f); };
+
+      const onDrop      = useCallback(e => { e.preventDefault(); setDragging(false); pick(e.dataTransfer.files[0]); }, []);
+      const onDragOver  = e => { e.preventDefault(); setDragging(true); };
+      const onDragLeave = () => setDragging(false);
+      const onChange    = e => pick(e.target.files[0]);
+
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center px-4 py-16">
+          <div className="w-full max-w-md fade">
+            {/* Header */}
+            <div className="text-center mb-10">
+              <div className="text-5xl mb-4">📄</div>
+              <h1 className="text-3xl font-bold text-white mb-2">Resume Analyzer</h1>
+              <p className="text-sm" style={{ color:'#6b7280' }}>
+                ATS scoring · salary benchmarking · market fit
+              </p>
+              <p className="text-xs mt-1" style={{ color:'#4b5563' }}>
+                Powered by GLM-4.7 · your resume never leaves your browser
+              </p>
+            </div>
+
+            {/* Market Picker */}
+            <MarketPicker market={market} setMarket={setMarket} />
+
+            {/* Drop Zone */}
+            <div
+              className={`dz rounded-2xl p-12 text-center cursor-pointer ${dragging ? 'dz-active' : ''} ${file ? 'dz-filled' : ''}`}
+              onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave}
+              onClick={() => inputRef.current?.click()}
+            >
+              <input ref={inputRef} type="file" accept=".pdf" className="hidden" onChange={onChange} />
+              {file ? (
+                <div>
+                  <div className="text-4xl mb-3">📎</div>
+                  <p className="font-bold text-white truncate">{file.name}</p>
+                  <p className="text-xs mt-2" style={{ color:'#6b7280' }}>
+                    {(file.size / 1024).toFixed(1)} KB · Click to change
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <div className="text-4xl mb-3">{dragging ? '🎯' : '☁️'}</div>
+                  <p className="font-bold text-white mb-1">
+                    {dragging ? 'Drop it!' : 'Drop your resume here'}
+                  </p>
+                  <p className="text-sm" style={{ color:'#6b7280' }}>or click to browse · PDF files only</p>
+                </div>
+              )}
+            </div>
+
+            {/* Target Roles */}
+            <div className="mt-5">
+              <RoleInput roles={roles} setRoles={setRoles} />
+            </div>
+
+            {/* Analyze button */}
+            <button
+              onClick={() => file && onFile(file, roles)}
+              className="w-full mt-2 py-3.5 rounded-xl font-bold text-sm transition-all duration-200"
+              style={{
+                background: file ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : '#1e1e35',
+                color: file ? '#fff' : '#4b5563',
+                cursor: file ? 'pointer' : 'not-allowed',
+                fontFamily: "'Space Mono',monospace",
+                boxShadow: file ? '0 0 24px rgba(124,58,237,.4)' : 'none',
+              }}
+            >
+              {file ? '→  Analyze Resume' : 'Select a PDF to get started'}
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       LOADING STATE
+    ═══════════════════════════════════════════════ */
+    const LoadingState = ({ step, tagline }) => (
+      <div className="min-h-screen flex flex-col items-center justify-center px-4">
+        <div className="text-center mb-12" style={{ maxWidth: 480 }}>
+          {/* Spinner */}
+          <div className="relative w-14 h-14 mx-auto mb-6">
+            <div className="w-14 h-14 rounded-full border-4 border-violet-500 border-t-transparent spin-anim" />
+            <div className="absolute inset-0 rounded-full border-4 border-violet-900/40" />
+          </div>
+
+          <h2 className="text-xl font-bold text-white mb-3">Analyzing your resume...</h2>
+
+          {/* Creative one-liner tagline */}
+          {tagline && (
+            <p className="text-sm italic mb-4 px-4 py-2.5 rounded-xl"
+              style={{
+                color: '#a78bfa',
+                background: 'rgba(124,58,237,.08)',
+                border: '1px solid rgba(124,58,237,.2)',
+                fontStyle: 'italic',
+              }}>
+              ✦ {tagline}
+            </p>
+          )}
+
+          {/* Step indicator */}
+          <p className="text-xs" style={{ color:'#4b5563' }}>{step}</p>
+        </div>
+        <div className="w-full max-w-4xl">
+          <Skeleton />
+        </div>
+      </div>
+    );
+
+    /* ═══════════════════════════════════════════════
+       ERROR STATE
+    ═══════════════════════════════════════════════ */
+    const ErrorState = ({ message, onRetry }) => (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="text-center max-w-md fade">
+          <div className="text-5xl mb-4">⚠️</div>
+          <h2 className="text-xl font-bold text-white mb-3">Something went wrong</h2>
+          <p className="text-sm mb-6 p-4 rounded-xl border leading-relaxed"
+            style={{ color:'#fca5a5', background:'rgba(255,68,68,.07)', borderColor:'rgba(255,68,68,.3)' }}>
+            {message}
+          </p>
+          <button onClick={onRetry}
+            className="px-8 py-3 rounded-xl font-bold text-sm transition-opacity hover:opacity-80"
+            style={{ background:'linear-gradient(135deg,#7c3aed,#a855f7)', color:'#fff',
+              fontFamily:"'Space Mono',monospace" }}>
+            ↩ Try Again
+          </button>
+        </div>
+      </div>
+    );
+
+    /* ═══════════════════════════════════════════════
+       RESULTS DASHBOARD
+    ═══════════════════════════════════════════════ */
+    const ResultsDashboard = ({ data, charCount, market, onReset }) => {
+      const { candidate, ats, improvement_plan, salary, personal_salary, market_fit, candidate_vs_market } = data;
+      return (
+        <div className="max-w-4xl mx-auto px-4 py-8 space-y-5">
+          {/* Top bar */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📄</span>
+              <h1 className="text-lg font-bold text-white">Resume Analysis</h1>
+            </div>
+            <span className="text-xs px-2 py-1 rounded" style={{ background:'#1e1e35', color:'#6b7280' }}>
+              {charCount.toLocaleString()} chars parsed
+            </span>
+          </div>
+
+          <CandidateCard c={candidate} />
+          <ATSSection ats={ats} />
+          {improvement_plan && (
+            <ImprovementPlanSection plan={improvement_plan} currentScore={ats.score} />
+          )}
+          <SalarySection salary={salary} market={market} />
+          {personal_salary && <PersonalSalarySection ps={personal_salary} market={market} />}
+          <MarketFitSection mf={market_fit} />
+          {candidate_vs_market && <CandidateVsMarketSection cvm={candidate_vs_market} />}
+
+          {/* Reset */}
+          <div className="text-center pt-4 pb-10">
+            <button onClick={onReset}
+              className="px-8 py-3 rounded-xl font-bold text-sm transition-opacity hover:opacity-80 border"
+              style={{ borderColor:'#7c3aed', color:'#a78bfa', background:'rgba(124,58,237,.08)',
+                fontFamily:"'Space Mono',monospace" }}>
+              ↩ Analyze Another Resume
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    /* ═══════════════════════════════════════════════
+       PROMPTS  (system + user, GLM-4.7 best practice)
+    ═══════════════════════════════════════════════ */
+    const SYSTEM_PROMPT = `You are an expert technical recruiter and compensation analyst with 15+ years of experience placing engineers and product professionals at companies ranging from Fortune 500 enterprises to seed-stage startups.
+
+Your expertise covers:
+- ATS (Applicant Tracking System) algorithms — you know exactly which signals cause resumes to be filtered out before a human sees them
+- Real-time compensation data for 2025-2026 across service-based firms, product companies, startups, and freelance/contract markets
+- Skills demand trends, emerging technologies, and what hiring managers are actually looking for right now
+
+Approach every resume analysis like a senior hiring partner doing a thorough pre-screen. Think step by step:
+1. First extract all factual details from the resume (name, role, timeline, skills, education)
+2. Then evaluate the resume's ATS performance against each specific check
+3. Then benchmark compensation based on role, seniority, skills stack, and location signals
+4. Finally assess market fit against current 2025-2026 hiring conditions for this profile
+
+Be specific and honest. Vague feedback helps no one. Always respond in English.
+You must output ONLY a valid JSON object — no markdown fences, no preamble, no commentary.`;
+
+    const buildMessages = (text, market, roles = []) => [
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: `Target market: ${market.name}
+Salary currency: ${market.currency} (${market.sym.trim()})
+All salary figures must be in ${market.currency}, benchmarked specifically against ${market.name} hiring norms for 2025-2026. Use company names that are well-known and representative of the ${market.name} tech industry for each tier (service-based, product-based, startups, freelance). If the candidate's resume shows international experience but the target market is ${market.name}, calibrate to what they could realistically earn in ${market.name}.
+${roles.length ? `\nTarget roles the candidate is pursuing: ${roles.join(', ')}.\nFactor these target roles into your salary ranges, hire_confidence scoring, benchmark_summary, and roles_recommended — assess how well this candidate's current profile aligns with those specific aspirations and what gaps exist between where they are now and those goals.` : ''}
+
+Analyze the resume below and return a JSON object with exactly this structure:
+
+{
+  "candidate": {
+    "name": "extracted full name or Unknown",
+    "role": "inferred current or target job title",
+    "experience_years": <number with up to 1 decimal place — sum the actual months worked across all roles and convert to years, e.g. 2.8 not 2>,
+    "seniority": "Junior | Mid | Senior | Lead | Principal | Executive",
+    "top_skills": ["skill1", "skill2", "skill3", "skill4", "skill5"],
+    "education": "highest qualification (degree + field + institution if present)",
+    "location_hint": "city/country inferred from resume or Not specified"
+  },
+  "ats": {
+    "score": <integer 0-100>,
+    "verdict": "Poor | Needs Work | Good | Excellent",
+    "passed_checks": [
+      { "label": "Contact information present (name, email, phone)", "status": <bool>, "note": "specific observation" },
+      { "label": "Clean formatting — no tables, graphics, or columns", "status": <bool>, "note": "specific observation" },
+      { "label": "Standard section headings (Experience, Education, Skills)", "status": <bool>, "note": "specific observation" },
+      { "label": "Quantified achievements (numbers, %, impact)", "status": <bool>, "note": "specific observation" },
+      { "label": "Strong keyword density for role", "status": <bool>, "note": "specific observation" },
+      { "label": "No spelling or grammar issues", "status": <bool>, "note": "specific observation" },
+      { "label": "Text is machine-readable (not image-based)", "status": <bool>, "note": "specific observation" },
+      { "label": "Appropriate length (1-2 pages ideal)", "status": <bool>, "note": "specific observation" },
+      { "label": "No personal photo or irrelevant details", "status": <bool>, "note": "specific observation" },
+      { "label": "Action verbs lead bullet points", "status": <bool>, "note": "specific observation" }
+    ],
+    "critical_issues": ["specific issue that will cause ATS rejection"],
+    "quick_wins": ["specific, actionable change that would meaningfully improve ATS score"]
+  },
+  "improvement_plan": {
+    "potential_score": <integer — realistic ATS score achievable after all tips below are applied>,
+    "tips": [
+      {
+        "priority": "Critical | High | Medium",
+        "category": "Achievements | Keywords | Formatting | Contact | Structure | Length | Verbs | Clarity",
+        "title": "short imperative title (max 8 words)",
+        "detail": "specific, actionable instruction — include a concrete example or exact wording where helpful",
+        "score_impact": <integer — ATS points this single fix adds>
+      }
+    ]
+  },
+  "salary": {
+    "currency": "${market.currency}",
+    "service_based": {
+      "label": "Service Based (TCS, Infosys, Wipro, Accenture)",
+      "min": <integer>,
+      "max": <integer>,
+      "median": <integer>,
+      "note": "1-sentence context on why these numbers fit this profile"
+    },
+    "product_based": {
+      "label": "Product Based (Google, Microsoft, Adobe, Atlassian)",
+      "min": <integer>,
+      "max": <integer>,
+      "median": <integer>,
+      "note": "1-sentence context"
+    },
+    "startup": {
+      "label": "Startups & Scale-ups",
+      "min": <integer>,
+      "max": <integer>,
+      "median": <integer>,
+      "note": "1-sentence context"
+    },
+    "freelance": {
+      "label": "Freelance / Contract",
+      "min": <integer>,
+      "max": <integer>,
+      "median": <integer>,
+      "note": "1-sentence context (annualised equivalent)"
+    }
+  },
+  "personal_salary": {
+    "floor": <integer - the absolute minimum this candidate should accept; walking away below this is rational>,
+    "target": <integer - what they should confidently lead with in any negotiation; defensible based on their profile>,
+    "stretch": <integer - ambitious but realistic ceiling; achievable at top-band companies or with competing offers>,
+    "currency": "${market.currency}",
+    "rationale": "2-3 sentences explaining why these specific numbers fit THIS candidate — cite their actual seniority, standout skills, and location signals. Be direct and specific, not generic.",
+    "negotiation_tips": [
+      "specific, actionable tip tailored to this candidate's profile",
+      "specific, actionable tip tailored to this candidate's profile"
+    ]
+  },
+  "market_fit": {
+    "hire_confidence": <integer 0-100>,
+    "confidence_label": "Unlikely | Possible | Likely | Strong | Exceptional",
+    "benchmark_summary": "2-3 sentences on how this candidate stacks up against current 2025-2026 market demand for this role",
+    "strengths": ["concrete differentiator 1", "concrete differentiator 2", "concrete differentiator 3"],
+    "gaps": ["specific gap vs market demand 1", "specific gap vs market demand 2"],
+    "roles_recommended": ["best-fit role title 1", "best-fit role title 2", "best-fit role title 3"]
+  },
+  "candidate_vs_market": {
+    "overall_standing": "Top 10% | Top 25% | Average | Below Average | Entry Level",
+    "standing_percentile": <integer 0-100 — where this candidate ranks vs typical applicants for this role in this market>,
+    "summary": "2-3 sentences comparing this candidate holistically to the average applicant pool for this role and market — be direct and specific",
+    "dimensions": [
+      { "name": "Technical Skills",        "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" },
+      { "name": "Experience Depth",         "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" },
+      { "name": "Achievement Impact",       "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" },
+      { "name": "Education & Credentials", "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" },
+      { "name": "Domain Expertise",         "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" },
+      { "name": "Resume Presentation",      "candidate_score": <1-10>, "market_avg_score": <1-10>, "note": "1-line specific context" }
+    ],
+    "pros": [
+      { "category": "Technical | Experience | Education | Achievements | Domain | Portfolio | Soft Skills", "title": "max 6-word title", "detail": "specific advantage vs average applicant in this market" }
+    ],
+    "cons": [
+      { "category": "Technical | Experience | Education | Achievements | Domain | Portfolio | Soft Skills", "title": "max 6-word title", "detail": "specific gap vs average applicant — be honest and direct" }
+    ]
+  }
+}
+
+Important distinction:
+- "salary" = what the market broadly pays across company types for someone at this level
+- "personal_salary" = what THIS specific person can command based on their actual resume — their unique combination of skills, tenure, achievements, and the target market. Floor/target/stretch must be internally consistent and fall within the relevant salary ranges above.
+
+Rules:
+- Salary figures must be realistic for the candidate's seniority, skills, and location signals — do not use placeholder numbers
+- ATS score should reflect actual ATS algorithm behaviour, not just resume quality
+- hire_confidence benchmarks against 2025-2026 hiring conditions specifically
+- critical_issues and quick_wins must be concrete and actionable, not generic
+- improvement_plan.tips must be sorted by score_impact descending; total score_impact of all tips should approximately equal (potential_score - ats.score); minimum 5 tips, cover diverse categories
+- candidate_vs_market.dimensions must contain exactly the 6 named dimensions in the order listed; scores are 1-10 relative to the average applicant pool for this role and market; pros must have 3-5 items and cons must have 3-5 items, each covering distinct categories
+- Output raw JSON only — no markdown, no text outside the object
+
+Resume text:
+${text}`
+      }
+    ];
+
+    /* ═══════════════════════════════════════════════
+       MAIN APP
+    ═══════════════════════════════════════════════ */
+    const App = () => {
+      const [screen, setScreen]       = useState('upload');   // upload | loading | results | error
+      const [market, setMarket]       = useState(MARKETS[0]); // default: India
+      const [analysis, setAnalysis]   = useState(null);
+      const [error, setError]         = useState('');
+      const [charCount, setCharCount] = useState(0);
+      const [loadStep, setLoadStep]   = useState('Reading PDF…');
+      const [tagline, setTagline]     = useState('');
+
+      // Set PDF.js worker
+      useEffect(() => {
+        const set = () => {
+          if (window.pdfjsLib) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+              'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          }
+        };
+        set();
+        const id = setInterval(() => { if (window.pdfjsLib) { set(); clearInterval(id); } }, 200);
+        return () => clearInterval(id);
+      }, []);
+
+      const extractText = async file => {
+        const buf = await file.arrayBuffer();
+        const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+        let text = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          text += content.items.map(x => x.str).join(' ') + '\n';
+        }
+        return text;
+      };
+
+      const run = async (file, roles = []) => {
+        setTagline(generateTagline(file));
+        setScreen('loading');
+        setError('');
+
+        try {
+          // Step 1: Parse PDF
+          setLoadStep('Reading PDF and extracting text…');
+          let raw;
+          try {
+            raw = await extractText(file);
+          } catch (e) {
+            throw new Error('Could not parse the PDF file. Make sure it is a valid PDF.');
+          }
+
+          const cleaned = raw.replace(/\s+/g, ' ').trim();
+          if (cleaned.length < 60) {
+            throw new Error(
+              'This PDF appears to be image-based or contains no extractable text. ' +
+              'Please upload a text-based PDF (not a scanned document).'
+            );
+          }
+
+          const truncated = cleaned.slice(0, 4000);
+          setCharCount(cleaned.length);
+
+          // Step 2: Send to GLM with thinking mode + JSON output
+          setLoadStep(`Analyzing against ${market.name} market standards…`);
+          const res = await fetch(CONFIG.endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${CONFIG.apiKey}`,
+              'Accept-Language': 'en-US,en',
+            },
+            body: JSON.stringify({
+              model:       CONFIG.model,
+              messages:    buildMessages(truncated, market, roles),
+              max_tokens:  CONFIG.maxTokens,
+              temperature: CONFIG.temperature,
+              response_format: { type: 'json_object' },  // guaranteed JSON output
+              // thinking mode is ON by default in glm-4.7 — no need to set it
+            }),
+          });
+
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            throw new Error(
+              errBody?.error?.message ||
+              `API error ${res.status} — please try again.`
+            );
+          }
+
+          // Step 3: Parse response (json_object mode guarantees valid JSON)
+          setLoadStep('Building your report…');
+          const body    = await res.json();
+          const rawText = body?.choices?.[0]?.message?.content || '';
+
+          let parsed;
+          try {
+            parsed = JSON.parse(rawText);
+          } catch {
+            // fallback: try to extract JSON block in case model wrapped it
+            const match = rawText.match(/\{[\s\S]*\}/);
+            if (!match) throw new Error('Response was not valid JSON — please try again.');
+            parsed = JSON.parse(match[0]);
+          }
+
+          // Validate minimal shape
+          if (!parsed.candidate || !parsed.ats || !parsed.salary || !parsed.market_fit) {
+            throw new Error('The response was incomplete — the model may have run out of output space. Please try again.');
+          }
+
+          setAnalysis(parsed);
+          setScreen('results');
+        } catch (err) {
+          setError(err.message || 'An unexpected error occurred.');
+          setScreen('error');
+        }
+      };
+
+      const reset = () => {
+        setScreen('upload');
+        setAnalysis(null);
+        setError('');
+        setCharCount(0);
+        setTagline('');
+      };
+
+      return (
+        <>
+          {screen === 'upload'  && <UploadZone onFile={run} market={market} setMarket={setMarket} />}
+          {screen === 'loading' && <LoadingState step={loadStep} tagline={tagline} />}
+          {screen === 'error'   && <ErrorState message={error} onRetry={reset} />}
+          {screen === 'results' && analysis && (
+            <ResultsDashboard data={analysis} charCount={charCount} market={market} onReset={reset} />
+          )}
+        </>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
