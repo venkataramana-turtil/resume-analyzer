@@ -8,10 +8,19 @@ const priorityMeta = {
 };
 
 export const ImprovementPlanSection = ({ plan, currentScore }) => {
-  const tips     = plan.tips || [];
+  const tips        = plan.tips || [];
   const totalImpact = tips.reduce((sum, t) => sum + (Number(t.score_impact) || 0), 0);
-  const potScore = Math.min(100, currentScore + totalImpact);
-  const gap      = potScore - currentScore;
+  const potScore    = Math.min(100, currentScore + totalImpact);
+  const gap         = potScore - currentScore;
+
+  // Greedily allocate the available headroom so displayed badges always sum to gap
+  let remaining = gap;
+  const adjustedTips = tips.map(tip => {
+    const raw = Number(tip.score_impact) || 0;
+    const adj = Math.min(raw, remaining);
+    remaining -= adj;
+    return { ...tip, _adj: adj };
+  });
 
   // Animate the potential score bar
   const [barW, setBarW] = useState(0);
@@ -72,18 +81,27 @@ export const ImprovementPlanSection = ({ plan, currentScore }) => {
 
       {/* Tips list */}
       <div className="divide-y" style={{ background:'#0f0f1a', borderColor:'#1e1e35' }}>
-        {tips.map((tip, i) => {
+        {adjustedTips.map((tip, i) => {
           const meta = priorityMeta[tip.priority] || priorityMeta['Medium'];
           return (
             <div key={i} className="px-6 py-4 flex gap-4 items-start transition-colors hover:bg-white/[0.02]">
               {/* Left: priority dot + impact */}
               <div className="shrink-0 flex flex-col items-center gap-1.5 pt-0.5" style={{ minWidth: 44 }}>
                 <span className="text-base leading-none">{meta.dot}</span>
-                <span className="text-xs font-bold px-1.5 py-0.5 rounded"
-                  style={{ background: meta.bg, color: meta.color, border:`1px solid ${meta.border}`,
-                    fontFamily:"'Space Mono',monospace", whiteSpace:'nowrap' }}>
-                  +{tip.score_impact}
-                </span>
+                {tip._adj > 0 ? (
+                  <span className="text-xs font-bold px-1.5 py-0.5 rounded"
+                    style={{ background: meta.bg, color: meta.color, border:`1px solid ${meta.border}`,
+                      fontFamily:"'Space Mono',monospace", whiteSpace:'nowrap' }}>
+                    +{tip._adj}
+                  </span>
+                ) : (
+                  <span className="text-xs px-1.5 py-0.5 rounded"
+                    style={{ background:'rgba(255,255,255,.04)', color:'#374151',
+                      border:'1px solid rgba(255,255,255,.06)',
+                      fontFamily:"'Space Mono',monospace", whiteSpace:'nowrap' }}>
+                    +0
+                  </span>
+                )}
               </div>
 
               {/* Content */}
