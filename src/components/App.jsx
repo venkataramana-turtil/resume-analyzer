@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { CONFIG, MARKETS } from '../config.js'
 import { SECTION_KEYS_A, SECTION_KEYS_B, SECTION_KEYS_C, extractTopLevelKey } from '../streaming.js'
-import { buildMessagesA, buildMessagesB, buildMessagesC, buildResumeCheckMessages } from '../prompts.js'
-import { generateTagline } from '../helpers.js'
+import { buildMessagesA, buildMessagesB, buildMessagesC } from '../prompts.js'
+import { generateTagline, checkResumeHeuristic } from '../helpers.js'
 import { UploadZone } from './UploadZone.jsx'
 import { LoadingState } from './LoadingState.jsx'
 import { ErrorState } from './ErrorState.jsx'
@@ -41,63 +41,6 @@ export const App = () => {
       text += content.items.map(x => x.str).join(' ') + '\n';
     }
     return text;
-  };
-
-  // Quick streaming check: is this document a resume?
-  const checkIsResume = async (text) => {
-    const res = await fetch(CONFIG.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${CONFIG.apiKey}`,
-        'Accept-Language': 'en-US,en',
-      },
-      body: JSON.stringify({
-        model:       CONFIG.model,
-        messages:    buildResumeCheckMessages(text),
-        max_tokens:  150,
-        temperature: 0,
-        stream:      true,
-      }),
-    });
-
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      throw new Error(errBody?.error?.message || `Verification failed (${res.status})`);
-    }
-
-    // Read full streamed response
-    const reader  = res.body.getReader();
-    const decoder = new TextDecoder();
-    let accumulated = '';
-    let buffer      = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data: ')) continue;
-        const data = trimmed.slice(6).trim();
-        if (data === '[DONE]') continue;
-        try {
-          const msg = JSON.parse(data);
-          accumulated += msg.choices?.[0]?.delta?.content ?? '';
-        } catch { /* ignore malformed chunks */ }
-      }
-    }
-
-    try {
-      const match = accumulated.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error('Could not parse verification response.');
-      return JSON.parse(match[0]);
-    } catch {
-      // If we can't parse the response at all, fail open so a valid resume isn't blocked
-      return { is_resume: true };
-    }
   };
 
   // Stream one API call; fires onSection(key, data) for each completed section
@@ -202,12 +145,11 @@ export const App = () => {
       const truncated = cleaned.slice(0, 4000);
       setCharCount(cleaned.length);
 
-      // Step 2: Verify it's a resume before firing the expensive calls
-      setLoadStep('Verifying document…');
-      const check = await checkIsResume(truncated);
+      // Step 2: Verify it's a resume using client-side heuristic (instant, no API call)
+      const check = checkResumeHeuristic(truncated);
       if (!check.is_resume) {
         throw Object.assign(
-          new Error(check.reason || 'This document does not appear to be a resume or CV.'),
+          new Error('This document does not appear to be a resume or CV. Please upload a resume that includes your name, job role, work experience, or location.'),
           { notResume: true }
         );
       }

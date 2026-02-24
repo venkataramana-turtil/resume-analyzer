@@ -1,5 +1,28 @@
 export const atsColor = s => s <= 40 ? '#ff4444' : s <= 65 ? '#ff9900' : s <= 85 ? '#aacc00' : '#00e676';
 
+// Client-side heuristic: is this text likely a resume?
+// Checks 4 signals — name, location, experience, role — requires at least 2.
+export const checkResumeHeuristic = (text) => {
+  const lower = text.toLowerCase();
+
+  // Signal 1: Name — 2+ consecutive Title Case words in the first 300 chars
+  const hasName = /\b[A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20}\b/.test(text.slice(0, 300));
+
+  // Signal 2: Location — common cities, countries, or location field labels
+  const hasLocation = /\b(bangalore|bengaluru|mumbai|delhi|hyderabad|chennai|pune|kolkata|india|usa|uk|remote|london|singapore|dubai|new york|california|canada|australia|germany|netherlands|toronto|sydney|berlin)\b/.test(lower)
+    || /\b(location|address|city|based in)\s*[:\-]/.test(lower);
+
+  // Signal 3: Experience — keywords or date ranges like "2019 – 2023" or "Jan 2020 – Present"
+  const hasExperience = /\b(experience|employment|work history|worked at|career|internship|job)\b/.test(lower)
+    || /\b20\d{2}\s*[-–—]\s*(20\d{2}|present|current|now)\b/i.test(lower);
+
+  // Signal 4: Role / job title keywords
+  const hasRole = /\b(engineer|developer|manager|analyst|designer|consultant|intern|director|architect|lead|senior|junior|officer|executive|specialist|programmer|scientist|recruiter|accountant|marketer|writer|researcher|product)\b/.test(lower);
+
+  const signals = [hasName, hasLocation, hasExperience, hasRole].filter(Boolean).length;
+  return { is_resume: signals >= 2, signals };
+};
+
 // sym comes from the selected market object; Indian rupee uses en-IN for lakh/crore commas
 export const fmtMoney = (n, sym = '$') => {
   const locale = sym.trim() === '₹' ? 'en-IN' : 'en-US';
