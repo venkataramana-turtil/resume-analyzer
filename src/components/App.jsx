@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { CONFIG, MARKETS } from '../config.js'
 import { SECTION_KEYS_A, SECTION_KEYS_B, SECTION_KEYS_C, extractTopLevelKey } from '../streaming.js'
-import { buildMessagesA, buildMessagesB, buildMessagesC } from '../prompts.js'
+import { buildMessagesA, buildMessagesB, buildMessagesC, buildResumeCheckMessages } from '../prompts.js'
 import { generateTagline } from '../helpers.js'
 import { UploadZone } from './UploadZone.jsx'
 import { LoadingState } from './LoadingState.jsx'
@@ -41,6 +41,34 @@ export const App = () => {
       text += content.items.map(x => x.str).join(' ') + '\n';
     }
     return text;
+  };
+
+  // Quick non-streaming check: is this document a resume?
+  const checkIsResume = async (text) => {
+    const res = await fetch(CONFIG.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CONFIG.apiKey}`,
+        'Accept-Language': 'en-US,en',
+      },
+      body: JSON.stringify({
+        model:       CONFIG.model,
+        messages:    buildResumeCheckMessages(text),
+        max_tokens:  120,
+        temperature: 0,
+        stream:      false,
+      }),
+    });
+    if (!res.ok) return { is_resume: true }; // fail open — don't block on check errors
+    const json = await res.json();
+    const content = json.choices?.[0]?.message?.content ?? '';
+    try {
+      const match = content.match(/\{[\s\S]*\}/);
+      return match ? JSON.parse(match[0]) : { is_resume: true };
+    } catch {
+      return { is_resume: true }; // fail open
+    }
   };
 
   // Stream one API call; fires onSection(key, data) for each completed section
@@ -145,7 +173,17 @@ export const App = () => {
       const truncated = cleaned.slice(0, 4000);
       setCharCount(cleaned.length);
 
-      // Step 2: Switch to results screen, fire both API calls in parallel
+      // Step 2: Verify it's a resume before firing the expensive calls
+      setLoadStep('Verifying document…');
+      const check = await checkIsResume(truncated);
+      if (!check.is_resume) {
+        throw Object.assign(
+          new Error(check.reason || 'This document does not appear to be a resume or CV.'),
+          { notResume: true }
+        );
+      }
+
+      // Step 3: Switch to results screen, fire 3 parallel API calls
       setScreen('results');
       setStreaming(true);
 
@@ -187,7 +225,11 @@ export const App = () => {
 
       setStreaming(false);
     } catch (err) {
-      setError(err.message || 'An unexpected error occurred.');
+      setError(
+        err.notResume
+          ? { message: err.message, title: "That doesn't look like a resume", icon: '📄' }
+          : { message: err.message || 'An unexpected error occurred.' }
+      );
       setScreen('error');
       setStreaming(false);
     }
@@ -206,7 +248,14 @@ export const App = () => {
     <>
       {screen === 'upload'  && <UploadZone onFile={run} market={market} setMarket={setMarket} />}
       {screen === 'loading' && <LoadingState step={loadStep} tagline={tagline} />}
-      {screen === 'error'   && <ErrorState message={error} onRetry={reset} />}
+      {screen === 'error'   && (
+        <ErrorState
+          message={typeof error === 'object' ? error.message : error}
+          title={typeof error === 'object' ? error.title : undefined}
+          icon={typeof error === 'object' ? error.icon : undefined}
+          onRetry={reset}
+        />
+      )}
       {screen === 'results' && (
         <ResultsDashboard sections={sections} streaming={streaming} charCount={charCount} market={market} onReset={reset} />
       )}

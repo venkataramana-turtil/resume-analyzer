@@ -217,5 +217,23 @@ ${text}`
   }
 ];
 
+// Pre-check — is this document a resume?
+export const buildResumeCheckMessages = (text) => [
+  {
+    role: 'system',
+    content: 'You are a document classifier. Your only job is to determine if a given text is a resume or CV. Reply with raw JSON only — no markdown, no extra text.',
+  },
+  {
+    role: 'user',
+    content: `Is the following document a resume or CV? Look for typical resume signals: work experience, education, skills, contact information, job titles, dates of employment.
+
+Return ONLY this JSON:
+{ "is_resume": <true|false>, "reason": "<one sentence — what the document actually appears to be>" }
+
+Document text:
+${text.slice(0, 1500)}`,
+  },
+];
+
 // Legacy export kept for compatibility — not used in parallel mode
 export const buildMessages = buildMessagesA;

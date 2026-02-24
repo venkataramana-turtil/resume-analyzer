@@ -1,8 +1,8 @@
-export const ErrorState = ({ message, onRetry }) => (
+export const ErrorState = ({ message, onRetry, title = 'Something went wrong', icon = '⚠️' }) => (
   <div className="min-h-screen flex items-center justify-center px-4">
     <div className="text-center max-w-md fade">
-      <div className="text-5xl mb-4">⚠️</div>
-      <h2 className="text-xl font-bold text-white mb-3">Something went wrong</h2>
+      <div className="text-5xl mb-4">{icon}</div>
+      <h2 className="text-xl font-bold text-white mb-3">{title}</h2>
       <p className="text-sm mb-6 p-4 rounded-xl border leading-relaxed"
         style={{ color:'#fca5a5', background:'rgba(255,68,68,.07)', borderColor:'rgba(255,68,68,.3)' }}>
         {message}
