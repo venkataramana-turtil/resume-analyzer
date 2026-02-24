@@ -43,7 +43,7 @@ export const App = () => {
     return text;
   };
 
-  // Quick non-streaming check: is this document a resume?
+  // Quick streaming check: is this document a resume?
   const checkIsResume = async (text) => {
     const res = await fetch(CONFIG.endpoint, {
       method: 'POST',
@@ -55,19 +55,48 @@ export const App = () => {
       body: JSON.stringify({
         model:       CONFIG.model,
         messages:    buildResumeCheckMessages(text),
-        max_tokens:  120,
+        max_tokens:  150,
         temperature: 0,
-        stream:      false,
+        stream:      true,
       }),
     });
-    if (!res.ok) return { is_resume: true }; // fail open — don't block on check errors
-    const json = await res.json();
-    const content = json.choices?.[0]?.message?.content ?? '';
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody?.error?.message || `Verification failed (${res.status})`);
+    }
+
+    // Read full streamed response
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulated = '';
+    let buffer      = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const data = trimmed.slice(6).trim();
+        if (data === '[DONE]') continue;
+        try {
+          const msg = JSON.parse(data);
+          accumulated += msg.choices?.[0]?.delta?.content ?? '';
+        } catch { /* ignore malformed chunks */ }
+      }
+    }
+
     try {
-      const match = content.match(/\{[\s\S]*\}/);
-      return match ? JSON.parse(match[0]) : { is_resume: true };
+      const match = accumulated.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error('Could not parse verification response.');
+      return JSON.parse(match[0]);
     } catch {
-      return { is_resume: true }; // fail open
+      // If we can't parse the response at all, fail open so a valid resume isn't blocked
+      return { is_resume: true };
     }
   };
 
