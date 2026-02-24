@@ -8,9 +8,10 @@ const priorityMeta = {
 };
 
 export const ImprovementPlanSection = ({ plan, currentScore }) => {
-  const tips    = plan.tips || [];
-  const potScore = plan.potential_score ?? 100;
-  const gap     = potScore - currentScore;
+  const tips     = plan.tips || [];
+  const totalImpact = tips.reduce((sum, t) => sum + (Number(t.score_impact) || 0), 0);
+  const potScore = Math.min(100, currentScore + totalImpact);
+  const gap      = potScore - currentScore;
 
   // Animate the potential score bar
   const [barW, setBarW] = useState(0);
