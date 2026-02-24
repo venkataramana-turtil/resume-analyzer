@@ -43,7 +43,7 @@ const FloatingPill = ({ sections, streaming }) => {
           <p className="text-xs font-medium leading-none mb-0.5" style={{ color: '#a78bfa', fontFamily: "'DM Mono',monospace" }}>
             {current.label}
           </p>
-          <p className="text-xs leading-none" style={{ color: '#374151', fontFamily: "'DM Mono',monospace" }}>
+          <p className="text-xs leading-none" style={{ color: '#9ca3af', fontFamily: "'DM Mono',monospace" }}>
             {done} / {total} loaded
           </p>
         </div>
