@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { CONFIG, MARKETS } from '../config.js'
 import { SECTION_KEYS_A, SECTION_KEYS_B, SECTION_KEYS_C, extractTopLevelKey } from '../streaming.js'
 import { buildMessagesA, buildMessagesB, buildMessagesC } from '../prompts.js'
-import { generateTagline, checkResumeHeuristic } from '../helpers.js'
+import { generateTagline } from '../helpers.js'
 import { UploadZone } from './UploadZone.jsx'
 import { LoadingState } from './LoadingState.jsx'
 import { ErrorState } from './ErrorState.jsx'
@@ -145,53 +145,40 @@ export const App = () => {
       const truncated = cleaned.slice(0, 4000);
       setCharCount(cleaned.length);
 
-      // Step 2: Verify it's a resume using client-side heuristic (instant, no API call)
-      const check = checkResumeHeuristic(truncated);
-      if (!check.is_resume) {
+      // Step 2: Switch to results screen and fire Call A
+      setScreen('results');
+      setStreaming(true);
+
+      // Collect Call A results locally so we can validate before firing B + C
+      const callAResults = {};
+      await streamCall(
+        buildMessagesA, SECTION_KEYS_A, truncated, market, roles,
+        (key, data) => {
+          callAResults[key] = data;
+          setSections(prev => ({ ...prev, [key]: data }));
+        }
+      );
+
+      // Step 3: Validate — if Call A couldn't extract a real candidate profile, abort
+      const c = callAResults.candidate;
+      const looksLikeResume = c && (
+        (c.name && c.name !== 'Unknown') ||
+        (c.experience_years && c.experience_years > 0) ||
+        (c.top_skills && c.top_skills.length > 0)
+      );
+      if (!looksLikeResume) {
         throw Object.assign(
-          new Error('This document does not appear to be a resume or CV. Please upload a resume that includes your name, job role, work experience, or location.'),
+          new Error('This document does not appear to be a resume or CV. Please upload a resume with your name, work experience, or skills.'),
           { notResume: true }
         );
       }
 
-      // Step 3: Switch to results screen, fire 3 parallel API calls
-      setScreen('results');
-      setStreaming(true);
-
-      // Call B and C buffer their results until Call A is fully done
-      const callBBuffer = {};
-      const callCBuffer = {};
-      let callAComplete = false;
-
-      const flushBuffer = buf => {
-        if (Object.keys(buf).length > 0)
-          setSections(prev => ({ ...prev, ...buf }));
-      };
-
-      const gatedHandler = (buf) => (key, data) => {
-        if (callAComplete) {
-          setSections(prev => ({ ...prev, [key]: data }));
-        } else {
-          buf[key] = data;
-        }
-      };
-
+      // Step 4: Fire B and C in parallel now that we know it's a valid resume
       await Promise.all([
-        // Call A — renders immediately as sections arrive
-        streamCall(
-          buildMessagesA, SECTION_KEYS_A, truncated, market, roles,
-          (key, data) => setSections(prev => ({ ...prev, [key]: data }))
-        ).then(() => {
-          callAComplete = true;
-          flushBuffer(callBBuffer);
-          flushBuffer(callCBuffer);
-        }),
-
-        // Call B — improvement plan only
-        streamCall(buildMessagesB, SECTION_KEYS_B, truncated, market, roles, gatedHandler(callBBuffer)),
-
-        // Call C — salary + market sections
-        streamCall(buildMessagesC, SECTION_KEYS_C, truncated, market, roles, gatedHandler(callCBuffer)),
+        streamCall(buildMessagesB, SECTION_KEYS_B, truncated, market, roles,
+          (key, data) => setSections(prev => ({ ...prev, [key]: data }))),
+        streamCall(buildMessagesC, SECTION_KEYS_C, truncated, market, roles,
+          (key, data) => setSections(prev => ({ ...prev, [key]: data }))),
       ]);
 
       setStreaming(false);
